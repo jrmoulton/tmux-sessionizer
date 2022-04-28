@@ -1,0 +1,29 @@
+[package]
+name = "tmux-sessionizer"
+version = "0.1.0"
+authors = ["Jared Moulton <jaredmoulton3@gmail.com>"]
+edition = "2021"
+license = "MIT"
+description = """
+Tmux Sessionizer is a cli tool to fuzzy find all git repositories under a specified folder and open
+them as a new tmux session. Also, for git worktrees, this tool opens all checked out worktrees as
+new windows. 
+"""
+homepage = "https://github.com/jrmoulton/git-repo-clone"
+repository = "https://github.com/jrmoulton/git-repo-clone"
+keyword = ["git", "tmux", "fuzzy", "workflow"]
+exclude = [
+    "images/*"
+]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+git2 = "0.14"
+clap = "3.1"
+skim = "0.9"
+
+[[bin]]
+name = "tms"
+path = "src/main.rs"
+
