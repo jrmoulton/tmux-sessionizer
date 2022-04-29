@@ -1,6 +1,7 @@
+use serde_derive::{Deserialize, Serialize};
 use std::{collections::VecDeque, fs, io::Cursor};
 
-use clap::Command;
+use clap::{Arg, Command};
 use skim::prelude::*;
 
 #[derive(Default)]
@@ -64,24 +65,106 @@ impl Repos {
     }
 }
 
-fn main() {
-    let _matches = Command::new("tmux-sessionizer")
+#[derive(Default, Debug, Serialize, Deserialize)]
+struct Config {
+    search_path: String,
+    excluded_dirs: Vec<String>,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let matches = Command::new("tmux-sessionizer")
         .author("Jared Moulton <jaredmoulton3@gmail.com>")
         .version("0.1.0")
         .about("Scan for all git folders in a specified directory, select one and open it as a new tmux session")
+        .subcommand(
+            Command::new("config")
+                .arg_required_else_help(true)
+                .arg(
+                    Arg::new("search path")
+                        .short('p')
+                        .long("path")
+                        .required(false)
+                        .takes_value(true)
+                        .help("The path to search through")
+                )
+                .arg(
+                    Arg::new("excluded dirs")
+                        .long("excluded")
+                        .required(false)
+                        .takes_value(true)
+                        .multiple_values(true)
+                        .help("As many directory names as desired to not be searched over")
+                )
+                .arg(
+                    Arg::new("remove dir")
+                        .required(false)
+                        .takes_value(true)
+                        .multiple_values(true)
+                        .long("remove")
+                        .help("As many directory names to be removed from the exclusion list")
+                )
+        )
         .get_matches();
 
+    match matches.subcommand() {
+        Some(("config", sub_m)) => {
+            let mut defaults: Config = confy::load("tms").unwrap();
+            defaults.search_path = match sub_m.value_of("search path") {
+                Some(name) => {
+                    if name.chars().rev().nth(0).unwrap() == '/' {
+                        let mut name = name.to_string();
+                        name.pop();
+                        name
+                    } else {
+                        name.to_string()
+                    }
+                }
+                None => defaults.search_path,
+            };
+            match sub_m.values_of("excluded dirs") {
+                Some(dirs) => defaults
+                    .excluded_dirs
+                    .extend(dirs.into_iter().map(|str| str.to_string())),
+                None => {}
+            }
+            match sub_m.value_of("remove dir") {
+                Some(dir) => defaults.excluded_dirs.retain(|x| x != dir),
+                None => {}
+            }
+            let config = Config {
+                search_path: defaults.search_path,
+                excluded_dirs: defaults.excluded_dirs,
+            };
+            confy::store("tms", config)?;
+            println!("Configuration has been stored");
+            std::process::exit(0);
+        }
+        _ => {}
+    }
+
+    let config: Config = confy::load("tms").unwrap();
+    let default_path = if !config.search_path.is_empty() {
+        config.search_path
+    } else {
+        println!("You must configure a default search path with `tms config` ");
+        std::process::exit(1);
+    };
     let mut repos = Repos::new();
 
     let mut to_search = VecDeque::new();
-    to_search.extend(fs::read_dir("/Users/jaredmoulton/Developer/").unwrap());
+    to_search.extend(fs::read_dir(&default_path).unwrap());
 
     while !to_search.is_empty() {
         let file = to_search.pop_front().unwrap().unwrap();
-        if let Ok(repo) = git2::Repository::open(file.path()) {
-            repos.push(repo);
-        } else if file.path().is_dir() {
-            to_search.extend(fs::read_dir(file.path()).unwrap());
+        if !config
+            .excluded_dirs
+            .contains(&file.file_name().to_str().unwrap().to_string())
+        {
+            if let Ok(repo) = git2::Repository::open(file.path()) {
+                repos.push(repo);
+            } else if file.path().is_dir() {
+                to_search.extend(fs::read_dir(file.path()).unwrap());
+            }
         }
     }
 
@@ -123,7 +206,7 @@ fn main() {
         .arg("-ds")
         .arg(&selected)
         .arg("-c")
-        .arg(format!("/Users/jaredmoulton/Developer/{}", &selected))
+        .arg(format!("{}/{}", default_path, &selected))
         .output()
         .unwrap();
 
@@ -146,12 +229,6 @@ fn main() {
                     .unwrap();
             }
             for tree in found.worktrees().unwrap().iter() {
-                let path_to_tree = found
-                    .find_worktree(tree.unwrap())
-                    .unwrap()
-                    .path()
-                    .to_owned();
-                println!("{path_to_tree:?}");
                 std::process::Command::new("tmux")
                     .arg("new-window")
                     .arg("-t")
@@ -194,6 +271,7 @@ fn main() {
                     std::process::Command::new("tmux")
                         .arg("send-keys")
                         .arg("-t")
+                        .arg(found_name)
                         .arg("clear")
                         .arg("Enter")
                         .output()
@@ -211,4 +289,5 @@ fn main() {
         .arg(found_name)
         .output()
         .unwrap();
+    Ok(())
 }
