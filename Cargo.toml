@@ -11,7 +11,6 @@ new windows.
 """
 homepage = "https://github.com/jrmoulton/tmux-sessionizer"
 repository = "https://github.com/jrmoulton/tmux-sessionizer"
-keyword = ["git", "tmux", "fuzzy", "workflow"]
 exclude = [
     "images/*"
 ]
@@ -25,6 +24,7 @@ skim = "0.9"
 confy = "0.4"
 serde_derive = "1.0"
 serde = "1.0"
+anyhow = "1.0"
 
 [[bin]]
 name = "tms"
