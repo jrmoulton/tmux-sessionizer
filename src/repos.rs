@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 
 use git2::Repository;
@@ -67,5 +68,24 @@ impl RepoContainer for Vec<Repository> {
             }
         }
         None
+    }
+}
+
+pub trait DirtyUtf8Path {
+    fn to_string(&self) -> Result<String>;
+}
+impl DirtyUtf8Path for std::path::PathBuf {
+    fn to_string(&self) -> Result<String> {
+        Ok(self.to_str().context("Not a valid utf8 path")?.to_string())
+    }
+}
+impl DirtyUtf8Path for std::path::Path {
+    fn to_string(&self) -> Result<String> {
+        Ok(self.to_str().context("Not a valid utf8 path")?.to_string())
+    }
+}
+impl DirtyUtf8Path for std::ffi::OsString {
+    fn to_string(&self) -> Result<String> {
+        Ok(self.to_str().context("Not a valid utf8 path")?.to_string())
     }
 }

@@ -3,11 +3,10 @@ mod repos;
 use anyhow::{anyhow, Context, Result};
 use clap::{Arg, ArgMatches, Command};
 use git2::Repository;
-use repos::RepoContainer;
+use repos::{DirtyUtf8Path, RepoContainer};
 use serde_derive::{Deserialize, Serialize};
 use skim::prelude::*;
 use std::{
-    char,
     collections::{HashMap, VecDeque},
     fs,
     io::Cursor,
@@ -53,11 +52,13 @@ fn main() -> Result<()> {
                         .help("As many directory names to be removed from the exclusion list")
                 )
         )
-        .subcommand(Command::new("kill").about("Kill the current tmux session and jump to another"))
+        .subcommand(Command::new("kill")
+            .about("Kill the current tmux session and jump to another"))
         .get_matches();
+
     handle_sub_commands(matches)?;
 
-    // This point is reached only if the `config` subcommand is not given
+    // This point is reached only if a subcommand is not given
     let config: Config = confy::load("tms")?;
     let default_path = if !config.search_path.is_empty() {
         config.search_path
@@ -100,11 +101,8 @@ fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<()> {
         if repo.worktrees()?.is_empty() {
             // Add the default branch as a tree (usually either main or master)
             let head = repo.head()?;
-            let path_to_default_tree = format!(
-                "{}{}",
-                repo.path().to_str().unwrap(),
-                head.shorthand().unwrap()
-            );
+            let path_to_default_tree =
+                format!("{}{}", repo.path().to_string()?, head.shorthand().unwrap());
             let path = std::path::Path::new(&path_to_default_tree);
             repo.worktree(
                 &head.shorthand().unwrap(),
@@ -114,12 +112,7 @@ fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<()> {
         }
         for tree in repo.worktrees()?.iter() {
             let window_name = tree.unwrap().to_string();
-            let path_to_tree = repo
-                .find_worktree(tree.unwrap())?
-                .path()
-                .to_str()
-                .unwrap()
-                .to_owned();
+            let path_to_tree = repo.find_worktree(tree.unwrap())?.path().to_string()?;
 
             execute_tmux_command(&format!(
                 "tmux new-window -t {repo_name} -n {window_name} -c {path_to_tree}"
@@ -182,9 +175,9 @@ fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
             std::process::exit(0);
         }
         Some(("kill", _)) => {
-            let mut current_session = execute_tmux_command("tmux display-message -p '#S'")?.stdout;
-            current_session.retain(|x| *x as char != '\'' && *x as char != '\n');
-            let current_session = String::from_utf8(current_session)?;
+            let mut current_session =
+                String::from_utf8(execute_tmux_command("tmux display-message -p '#S'")?.stdout)?;
+            current_session.retain(|x| x != '\'' && x != '\n');
             // TODO: Just switch to some rando open tmux session (or create a new one) not assume
             // config
             execute_tmux_command("tmux switch-client -t _config")?;
@@ -220,15 +213,9 @@ fn find_git_repos(
     to_search.extend(fs::read_dir(&default_path)?);
     while !to_search.is_empty() {
         let file = to_search.pop_front().unwrap()?;
-        if !excluded_dirs.contains(&file.file_name().to_str().unwrap().to_string()) {
+        if !excluded_dirs.contains(&file.file_name().to_string()?) {
             if let Ok(repo) = git2::Repository::open(file.path()) {
-                let name = file
-                    .path()
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string();
+                let name = file.path().to_string()?;
                 repos.insert(name, repo);
             } else if file.path().is_dir() {
                 to_search.extend(fs::read_dir(file.path())?);
