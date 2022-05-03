@@ -74,9 +74,13 @@ fn main() -> Result<()> {
         .find(&repo_name)
         .context("Could not find the internal representation of the selected repository")?;
 
-    let session_previously_existed =
-        String::from_utf8(execute_tmux_command("tmux list-sessions -F #S")?.stdout)?
-            .contains(&repo_name);
+    let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S")?.stdout)?;
+    let mut sessions = sessions.lines();
+    let session_previously_existed = sessions.any(|line| {
+        // tmux will return the output with extra ' and \n characters
+        line.to_owned().retain(|char| char != '\'' && char != '\n');
+        line == repo_name
+    });
 
     if !session_previously_existed {
         execute_tmux_command(&format!(
@@ -178,9 +182,9 @@ fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
             std::process::exit(0);
         }
         Some(("kill", _)) => {
-            let mut temp = execute_tmux_command("tmux display-message -p '#S'")?.stdout;
-            temp.retain(|x| *x as char != '\'' && *x as char != '\n');
-            let current_session = String::from_utf8(temp)?;
+            let mut current_session = execute_tmux_command("tmux display-message -p '#S'")?.stdout;
+            current_session.retain(|x| *x as char != '\'' && *x as char != '\n');
+            let current_session = String::from_utf8(current_session)?;
             // TODO: Just switch to some rando open tmux session (or create a new one) not assume
             // config
             execute_tmux_command("tmux switch-client -t _config")?;
