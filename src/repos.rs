@@ -1,11 +1,30 @@
-#[derive(Default)]
-pub struct Repos {
-    repos: Vec<git2::Repository>,
+use std::collections::HashMap;
+
+use git2::Repository;
+
+pub trait RepoContainer {
+    fn to_string(&self) -> String;
+    fn find(&self, name: &str) -> Option<&Repository>;
 }
-impl ToString for Repos {
+
+impl RepoContainer for HashMap<String, Repository> {
     fn to_string(&self) -> String {
         let mut return_string = String::new();
-        for repo in &self.repos {
+        for (name, _) in self {
+            return_string.push_str(&format!("{}\n", name));
+        }
+        return_string
+    }
+
+    fn find(&self, name: &str) -> Option<&Repository> {
+        self.get(name)
+    }
+}
+
+impl RepoContainer for Vec<Repository> {
+    fn to_string(&self) -> String {
+        let mut return_string = String::new();
+        for repo in self {
             if repo.is_bare() {
                 return_string.push_str(&format!(
                     "{}\n",
@@ -26,16 +45,8 @@ impl ToString for Repos {
         }
         return_string
     }
-}
-impl Repos {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn push(&mut self, repo: git2::Repository) {
-        self.repos.push(repo);
-    }
-    pub fn find(&self, name: &str) -> Option<&git2::Repository> {
-        for repo in &self.repos {
+    fn find(&self, name: &str) -> Option<&git2::Repository> {
+        for repo in self {
             if repo.is_bare() {
                 let temp = repo.path().file_name().unwrap().to_str().unwrap();
                 if temp == name {

@@ -3,10 +3,16 @@ mod repos;
 use anyhow::{anyhow, Context, Result};
 use clap::{Arg, ArgMatches, Command};
 use git2::Repository;
-use repos::Repos;
+use repos::RepoContainer;
 use serde_derive::{Deserialize, Serialize};
 use skim::prelude::*;
-use std::{collections::VecDeque, fs, io::Cursor, process};
+use std::{
+    char,
+    collections::{HashMap, VecDeque},
+    fs,
+    io::Cursor,
+    process,
+};
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct Config {
@@ -47,6 +53,7 @@ fn main() -> Result<()> {
                         .help("As many directory names to be removed from the exclusion list")
                 )
         )
+        .subcommand(Command::new("kill").about("Kill the current tmux session and jump to another"))
         .get_matches();
     handle_sub_commands(matches)?;
 
@@ -124,14 +131,17 @@ fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<()> {
 
 fn execute_tmux_command(command: &str) -> Result<process::Output> {
     let args: Vec<&str> = command.split(' ').skip(1).collect();
-    Ok(process::Command::new("tmux").args(args).output()?)
+    Ok(process::Command::new("tmux")
+        .args(args)
+        .output()
+        .expect(&format!("Failed to execute the tmux command `{command}`")))
 }
 
 fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
     match matches.subcommand() {
-        Some(("config", sub_conf)) => {
+        Some(("config", sub_cmd_matches)) => {
             let mut defaults: Config = confy::load("tms")?;
-            defaults.search_path = match sub_conf.value_of("search path") {
+            defaults.search_path = match sub_cmd_matches.value_of("search path") {
                 Some(name) => {
                     if name
                         .chars()
@@ -149,13 +159,13 @@ fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
                 }
                 None => defaults.search_path,
             };
-            match sub_conf.values_of("excluded dirs") {
+            match sub_cmd_matches.values_of("excluded dirs") {
                 Some(dirs) => defaults
                     .excluded_dirs
                     .extend(dirs.into_iter().map(|str| str.to_string())),
                 None => {}
             }
-            match sub_conf.value_of("remove dir") {
+            match sub_cmd_matches.value_of("remove dir") {
                 Some(dir) => defaults.excluded_dirs.retain(|x| x != dir),
                 None => {}
             }
@@ -167,11 +177,21 @@ fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
             println!("Configuration has been stored");
             std::process::exit(0);
         }
+        Some(("kill", _)) => {
+            let mut temp = execute_tmux_command("tmux display-message -p '#S'")?.stdout;
+            temp.retain(|x| *x as char != '\'' && *x as char != '\n');
+            let current_session = String::from_utf8(temp)?;
+            // TODO: Just switch to some rando open tmux session (or create a new one) not assume
+            // config
+            execute_tmux_command("tmux switch-client -t _config")?;
+            execute_tmux_command(&format!("tmux kill-session -t {current_session}"))?;
+            std::process::exit(1);
+        }
         _ => Ok(()),
     }
 }
 
-fn get_single_selection(repos: &Repos) -> Result<String> {
+fn get_single_selection(repos: &HashMap<String, Repository>) -> Result<String> {
     let options = SkimOptionsBuilder::default()
         .height(Some("50%"))
         .multi(false)
@@ -187,15 +207,25 @@ fn get_single_selection(repos: &Repos) -> Result<String> {
     Ok(skim_output.selected_items[0].output().to_string())
 }
 
-fn find_git_repos(default_path: &str, excluded_dirs: Vec<String>) -> Result<Repos> {
-    let mut repos = Repos::new();
+fn find_git_repos(
+    default_path: &str,
+    excluded_dirs: Vec<String>,
+) -> Result<HashMap<String, Repository>> {
+    let mut repos = HashMap::new();
     let mut to_search = VecDeque::new();
     to_search.extend(fs::read_dir(&default_path)?);
     while !to_search.is_empty() {
         let file = to_search.pop_front().unwrap()?;
         if !excluded_dirs.contains(&file.file_name().to_str().unwrap().to_string()) {
             if let Ok(repo) = git2::Repository::open(file.path()) {
-                repos.push(repo);
+                let name = file
+                    .path()
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                repos.insert(name, repo);
             } else if file.path().is_dir() {
                 to_search.extend(fs::read_dir(file.path())?);
             }
@@ -234,31 +264,21 @@ fn activate_py_env(found_repo: &Repository, found_name: &str, max_files_checks: 
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn write_search_path() {
-        unimplemented!("Not yet tested");
-    }
-    #[test]
-    fn read_search_path() {
-        unimplemented!("Not yet tested");
-    }
+    // Need to test that tmux sessions can be created, session switched to, multiple windows can be
+    // opened for bare repositories, python environments can be found and activated
+    // #[test]
+    // fn read_search_path() {
+    //     use crate::Config;
 
-    #[test]
-    fn write_exclude_dir() {
-        unimplemented!("Not yet tested");
-    }
-    #[test]
-    fn read_exclude_dir() {
-        unimplemented!("Not yet tested");
-    }
-
-    #[test]
-    fn remove_exclude_dir() {
-        unimplemented!("Not yet tested");
-    }
-
-    #[test]
-    fn find_dirs() {
-        unimplemented!("Not yet tested");
-    }
+    //     confy::store(
+    //         "tms-test",
+    //         Config {
+    //             search_path: "/home".to_string(),
+    //             excluded_dirs: Vec::new(),
+    //         },
+    //     )
+    //     .unwrap();
+    //     let config: Config = confy::load("tms-test").unwrap();
+    //     assert_eq!(config.search_path, "/home");
+    // }
 }
