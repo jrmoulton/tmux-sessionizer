@@ -87,11 +87,11 @@ fn main() -> Result<()> {
         execute_tmux_command(&format!(
             "tmux new-session -ds {repo_name} -c {default_path}/{repo_name}"
         ))?;
-        set_up_tmux_env(&found_repo, &repo_name)?;
+        set_up_tmux_env(found_repo, &repo_name)?;
     }
     execute_tmux_command(&format!(
         "tmux switch-client -t {}",
-        repo_name.replace(".", "_")
+        repo_name.replace('.', "_")
     ))?;
     Ok(())
 }
@@ -105,7 +105,7 @@ fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<()> {
                 format!("{}{}", repo.path().to_string()?, head.shorthand().unwrap());
             let path = std::path::Path::new(&path_to_default_tree);
             repo.worktree(
-                &head.shorthand().unwrap(),
+                head.shorthand().unwrap(),
                 path,
                 Some(git2::WorktreeAddOptions::new().reference(Some(&head))),
             )?;
@@ -131,7 +131,7 @@ fn execute_tmux_command(command: &str) -> Result<process::Output> {
     Ok(process::Command::new("tmux")
         .args(args)
         .output()
-        .expect(&format!("Failed to execute the tmux command `{command}`")))
+        .unwrap_or_else(|_| panic!("Failed to execute the tmux command `{command}`")))
 }
 
 fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
@@ -143,7 +143,7 @@ fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
                     if name
                         .chars()
                         .rev()
-                        .nth(0)
+                        .next()
                         .context("The path must be at least 1 character long")?
                         == '/'
                     {

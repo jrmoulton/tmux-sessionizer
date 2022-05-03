@@ -11,7 +11,7 @@ pub trait RepoContainer {
 impl RepoContainer for HashMap<String, Repository> {
     fn to_string(&self) -> String {
         let mut return_string = String::new();
-        for (name, _) in self {
+        for name in self.keys() {
             return_string.push_str(&format!("{}\n", name));
         }
         return_string
