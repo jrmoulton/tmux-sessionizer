@@ -215,7 +215,7 @@ fn find_git_repos(
         let file = to_search.pop_front().unwrap()?;
         if !excluded_dirs.contains(&file.file_name().to_string()?) {
             if let Ok(repo) = git2::Repository::open(file.path()) {
-                let name = file.path().to_string()?;
+                let name = file.path().file_name().unwrap().to_string()?;
                 repos.insert(name, repo);
             } else if file.path().is_dir() {
                 to_search.extend(fs::read_dir(file.path())?);

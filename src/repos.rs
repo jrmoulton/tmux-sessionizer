@@ -84,7 +84,7 @@ impl DirtyUtf8Path for std::path::Path {
         Ok(self.to_str().context("Not a valid utf8 path")?.to_string())
     }
 }
-impl DirtyUtf8Path for std::ffi::OsString {
+impl DirtyUtf8Path for std::ffi::OsStr {
     fn to_string(&self) -> Result<String> {
         Ok(self.to_str().context("Not a valid utf8 path")?.to_string())
     }
