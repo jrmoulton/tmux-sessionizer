@@ -1,10 +1,13 @@
+mod configs;
+mod dirty_paths;
 mod repos;
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Arg, ArgMatches, Command};
+use configs::*;
+use dirty_paths::DirtyUtf8Path;
 use git2::Repository;
-use repos::{DirtyUtf8Path, RepoContainer};
-use serde_derive::{Deserialize, Serialize};
+use repos::RepoContainer;
 use skim::prelude::*;
 use std::{
     collections::{HashMap, VecDeque},
@@ -12,19 +15,6 @@ use std::{
     io::Cursor,
     process,
 };
-
-#[derive(Default, Debug, Serialize, Deserialize)]
-struct OldConfig {
-    search_path: String,
-    excluded_dirs: Vec<String>,
-}
-
-#[derive(Default, Debug, Serialize, Deserialize)]
-struct Config {
-    search_paths: Vec<String>,
-    excluded_dirs: Vec<String>,
-    default_session: Option<String>,
-}
 
 fn main() -> Result<()> {
     let matches = Command::new("tmux-sessionizer")
@@ -96,16 +86,17 @@ fn main() -> Result<()> {
 
     if config.search_paths.is_empty() {
         return Err(anyhow!(
-            "You must configure a default search path with `tms config` "
+            "You must configure at least one default search path with `tms config` "
         ));
     }
 
-    let repos = find_git_repos(config.search_paths, config.excluded_dirs)?;
+    let repos = find_repos(config.search_paths, config.excluded_dirs)?;
     let repo_name = get_single_selection(&repos)?;
 
     let found_repo = repos
         .find_repo(&repo_name)
-        .context("Could not find the internal representation of the selected repository")?;
+        .context("Could not find the internal representation of the selected repository")
+        .unwrap();
 
     let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S")?.stdout)?;
     let mut sessions = sessions.lines();
@@ -116,9 +107,9 @@ fn main() -> Result<()> {
     });
 
     let path = if found_repo.is_bare() {
-        found_repo.path().to_str().unwrap()
+        found_repo.path().to_string()?
     } else {
-        found_repo.path().parent().unwrap().to_str().unwrap()
+        found_repo.path().parent().unwrap().to_string()?
     };
 
     if !session_previously_existed {
@@ -126,10 +117,8 @@ fn main() -> Result<()> {
         set_up_tmux_env(found_repo, &repo_name)?;
     }
 
-    execute_tmux_command(&format!(
-        "tmux switch-client -t {}",
-        repo_name.replace('.', "_")
-    ))?;
+    let repo_name = repo_name.replace('.', "_");
+    execute_tmux_command(&format!("tmux switch-client -t {repo_name}"))?;
 
     Ok(())
 }
@@ -159,7 +148,7 @@ fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<()> {
         // Kill that first extra window
         execute_tmux_command(&format!("tmux kill-window -t {repo_name}:1"))?;
     } else {
-        activate_py_env(repo, repo_name, 50)?;
+        try_act_py_env(repo, repo_name, 50)?;
     }
     Ok(())
 }
@@ -254,6 +243,15 @@ fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
             std::process::exit(0);
         }
         Some(("sessions", _)) => {
+            let sessions =
+                String::from_utf8(execute_tmux_command("tmux list-sessions -F #S")?.stdout)?;
+            let mut current_session =
+                String::from_utf8(execute_tmux_command("tmux display-message -p '#S'")?.stdout)?;
+            current_session.retain(|x| x != '\'' && x != '\n');
+            let sessions = sessions
+                .replace('\n', " ")
+                .replace(&current_session, &format!("{current_session}*"));
+            println!("{sessions}");
             std::process::exit(0);
         }
         _ => Ok(()),
@@ -276,16 +274,14 @@ fn get_single_selection(repos: &impl RepoContainer) -> Result<String> {
     Ok(skim_output.selected_items[0].output().to_string())
 }
 
-fn find_git_repos(
-    default_paths: Vec<String>,
-    excluded_dirs: Vec<String>,
-) -> Result<impl RepoContainer> {
+fn find_repos(paths: Vec<String>, excluded_dirs: Vec<String>) -> Result<impl RepoContainer> {
     let mut repos = HashMap::new();
     let mut to_search = VecDeque::new();
 
-    default_paths
+    paths
         .iter()
         .for_each(|path| to_search.push_back(std::path::PathBuf::from(path)));
+
     while !to_search.is_empty() {
         let file = to_search.pop_front().unwrap();
         if !excluded_dirs.contains(&file.file_name().unwrap().to_string()?) {
@@ -300,7 +296,7 @@ fn find_git_repos(
     Ok(repos)
 }
 
-fn activate_py_env(found_repo: &Repository, found_name: &str, max_files_checks: u32) -> Result<()> {
+fn try_act_py_env(found_repo: &Repository, found_name: &str, max_files_checks: u32) -> Result<()> {
     let mut find_py_env = VecDeque::new();
     find_py_env.extend(fs::read_dir(found_repo.path().parent().unwrap())?);
 
