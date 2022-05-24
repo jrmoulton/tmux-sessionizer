@@ -14,26 +14,43 @@ use std::{
 };
 
 #[derive(Default, Debug, Serialize, Deserialize)]
-struct Config {
+struct OldConfig {
     search_path: String,
     excluded_dirs: Vec<String>,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+struct Config {
+    search_paths: Vec<String>,
+    excluded_dirs: Vec<String>,
+    default_session: Option<String>,
 }
 
 fn main() -> Result<()> {
     let matches = Command::new("tmux-sessionizer")
         .author("Jared Moulton <jaredmoulton3@gmail.com>")
-        .version("0.1.0")
-        .about("Scan for all git folders in a specified directory, select one and open it as a new tmux session")
+        .version("0.1.1")
+        .about("Scan for all git folders in specified directories, select one and open it as a new tmux session")
         .subcommand(
             Command::new("config")
                 .arg_required_else_help(true)
+                .about("Configure the defaults for search paths and excluded directories")
                 .arg(
-                    Arg::new("search path")
+                    Arg::new("search paths")
                         .short('p')
-                        .long("path")
+                        .long("paths")
                         .required(false)
                         .takes_value(true)
-                        .help("The path to search through")
+                        .multiple_values(true)
+                        .help("The paths to search through. Paths must be full paths (no support for ~)")
+                )
+                .arg(
+                    Arg::new("default session")
+                        .short('s')
+                        .long("session")
+                        .required(false)
+                        .takes_value(true)
+                        .help("The default session to switch to (if avaliable) when killing another session")
                 )
                 .arg(
                     Arg::new("excluded dirs")
@@ -53,26 +70,41 @@ fn main() -> Result<()> {
                 )
         )
         .subcommand(Command::new("kill")
-            .about("Kill the current tmux session and jump to another"))
+            .about("Kill the current tmux session and jump to another")
+        )
+        .subcommand(Command::new("sessions")
+            .about("Show running tmux sessions with asterisk on the current session")
+        )
         .get_matches();
 
     handle_sub_commands(matches)?;
 
     // This point is reached only if a subcommand is not given
-    let config: Config = confy::load("tms")?;
-    let default_path = if !config.search_path.is_empty() {
-        config.search_path
-    } else {
+    let config = confy::load::<Config>("tms");
+    let config = match config {
+        Ok(defaults) => defaults,
+        Err(_) => {
+            let old_config = confy::load::<OldConfig>("tms").unwrap();
+            let path = vec![old_config.search_path];
+            Config {
+                search_paths: path,
+                excluded_dirs: old_config.excluded_dirs,
+                default_session: None,
+            }
+        }
+    };
+
+    if config.search_paths.is_empty() {
         return Err(anyhow!(
             "You must configure a default search path with `tms config` "
         ));
-    };
+    }
 
-    let repos = find_git_repos(&default_path, config.excluded_dirs)?;
+    let repos = find_git_repos(config.search_paths, config.excluded_dirs)?;
     let repo_name = get_single_selection(&repos)?;
 
     let found_repo = repos
-        .find(&repo_name)
+        .find_repo(&repo_name)
         .context("Could not find the internal representation of the selected repository")?;
 
     let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S")?.stdout)?;
@@ -83,16 +115,22 @@ fn main() -> Result<()> {
         line == repo_name
     });
 
+    let path = if found_repo.is_bare() {
+        found_repo.path().to_str().unwrap()
+    } else {
+        found_repo.path().parent().unwrap().to_str().unwrap()
+    };
+
     if !session_previously_existed {
-        execute_tmux_command(&format!(
-            "tmux new-session -ds {repo_name} -c {default_path}/{repo_name}"
-        ))?;
+        execute_tmux_command(&format!("tmux new-session -ds {repo_name} -c {path}",))?;
         set_up_tmux_env(found_repo, &repo_name)?;
     }
+
     execute_tmux_command(&format!(
         "tmux switch-client -t {}",
         repo_name.replace('.', "_")
     ))?;
+
     Ok(())
 }
 
@@ -137,25 +175,38 @@ fn execute_tmux_command(command: &str) -> Result<process::Output> {
 fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
     match matches.subcommand() {
         Some(("config", sub_cmd_matches)) => {
-            let mut defaults: Config = confy::load("tms")?;
-            defaults.search_path = match sub_cmd_matches.value_of("search path") {
-                Some(name) => {
-                    if name
-                        .chars()
-                        .rev()
-                        .next()
-                        .context("The path must be at least 1 character long")?
-                        == '/'
-                    {
-                        let mut name = name.to_string();
-                        name.pop();
-                        name
-                    } else {
-                        name.to_string()
+            let defaults = confy::load::<Config>("tms");
+            let mut defaults = match defaults {
+                Ok(defaults) => defaults,
+                Err(_) => {
+                    let old_config = confy::load::<OldConfig>("tms").unwrap();
+                    let path = vec![old_config.search_path];
+                    Config {
+                        search_paths: path,
+                        excluded_dirs: old_config.excluded_dirs,
+                        ..Default::default()
                     }
                 }
-                None => defaults.search_path,
             };
+            defaults.search_paths = match sub_cmd_matches.values_of("search paths") {
+                Some(paths) => {
+                    let mut paths = paths.map(|x| x.to_owned()).collect::<Vec<String>>();
+                    paths.iter_mut().for_each(|path| {
+                        *path = if path.chars().rev().next().unwrap() == '/' {
+                            let mut path = path.to_string();
+                            path.pop();
+                            path
+                        } else {
+                            path.to_owned()
+                        }
+                    });
+                    paths
+                }
+                None => defaults.search_paths,
+            };
+            defaults.default_session = sub_cmd_matches
+                .value_of("default session")
+                .map(|val| val.replace('.', "_"));
             match sub_cmd_matches.values_of("excluded dirs") {
                 Some(dirs) => defaults
                     .excluded_dirs
@@ -163,32 +214,53 @@ fn handle_sub_commands(matches: ArgMatches) -> Result<()> {
                 None => {}
             }
             match sub_cmd_matches.value_of("remove dir") {
-                Some(dir) => defaults.excluded_dirs.retain(|x| x != dir),
+                Some(dirs) => dirs
+                    .split(' ')
+                    .for_each(|dir| defaults.excluded_dirs.retain(|x| x != dir)),
                 None => {}
             }
             let config = Config {
-                search_path: defaults.search_path,
+                search_paths: defaults.search_paths,
                 excluded_dirs: defaults.excluded_dirs,
+                default_session: defaults.default_session,
             };
+
             confy::store("tms", config)?;
             println!("Configuration has been stored");
             std::process::exit(0);
         }
-        Some(("kill", _)) => {
+        std::option::Option::Some(("kill", _)) => {
+            let defaults = confy::load::<Config>("tms")?;
             let mut current_session =
                 String::from_utf8(execute_tmux_command("tmux display-message -p '#S'")?.stdout)?;
             current_session.retain(|x| x != '\'' && x != '\n');
-            // TODO: Just switch to some rando open tmux session (or create a new one) not assume
-            // config
-            execute_tmux_command("tmux switch-client -t _config")?;
+
+            let sessions =
+                String::from_utf8(execute_tmux_command("tmux list-sessions -F #S")?.stdout)?;
+            let sessions: Vec<&str> = sessions.lines().collect();
+
+            let to_session = if defaults.default_session.is_some()
+                && sessions.contains(&defaults.default_session.clone().unwrap().as_str())
+                && current_session != defaults.default_session.clone().unwrap()
+            {
+                defaults.default_session.unwrap()
+            } else if current_session != sessions[0] {
+                sessions[0].to_string()
+            } else {
+                sessions.get(1).unwrap_or_else(|| &sessions[0]).to_string()
+            };
+            execute_tmux_command(&format!("tmux switch-client -t {to_session}"))?;
             execute_tmux_command(&format!("tmux kill-session -t {current_session}"))?;
-            std::process::exit(1);
+            std::process::exit(0);
+        }
+        Some(("sessions", _)) => {
+            std::process::exit(0);
         }
         _ => Ok(()),
     }
 }
 
-fn get_single_selection(repos: &HashMap<String, Repository>) -> Result<String> {
+fn get_single_selection(repos: &impl RepoContainer) -> Result<String> {
     let options = SkimOptionsBuilder::default()
         .height(Some("50%"))
         .multi(false)
@@ -196,7 +268,7 @@ fn get_single_selection(repos: &HashMap<String, Repository>) -> Result<String> {
         .build()
         .unwrap();
     let item_reader = SkimItemReader::default();
-    let item = item_reader.of_bufread(Cursor::new(repos.to_string()));
+    let item = item_reader.of_bufread(Cursor::new(repos.repo_string()));
     let skim_output = Skim::run_with(&options, Some(item)).unwrap();
     if skim_output.is_abort {
         return Err(anyhow!("No selection made"));
@@ -205,20 +277,23 @@ fn get_single_selection(repos: &HashMap<String, Repository>) -> Result<String> {
 }
 
 fn find_git_repos(
-    default_path: &str,
+    default_paths: Vec<String>,
     excluded_dirs: Vec<String>,
-) -> Result<HashMap<String, Repository>> {
+) -> Result<impl RepoContainer> {
     let mut repos = HashMap::new();
     let mut to_search = VecDeque::new();
-    to_search.extend(fs::read_dir(&default_path)?);
+
+    default_paths
+        .iter()
+        .for_each(|path| to_search.push_back(std::path::PathBuf::from(path)));
     while !to_search.is_empty() {
-        let file = to_search.pop_front().unwrap()?;
-        if !excluded_dirs.contains(&file.file_name().to_string()?) {
-            if let Ok(repo) = git2::Repository::open(file.path()) {
-                let name = file.path().file_name().unwrap().to_string()?;
-                repos.insert(name, repo);
-            } else if file.path().is_dir() {
-                to_search.extend(fs::read_dir(file.path())?);
+        let file = to_search.pop_front().unwrap();
+        if !excluded_dirs.contains(&file.file_name().unwrap().to_string()?) {
+            if let Ok(repo) = git2::Repository::open(file.clone()) {
+                let name = file.file_name().unwrap().to_string()?;
+                repos.insert_repo(name, repo);
+            } else if file.is_dir() {
+                to_search.extend(fs::read_dir(file)?.map(|path| path.unwrap().path()));
             }
         }
     }
@@ -251,25 +326,4 @@ fn activate_py_env(found_repo: &Repository, found_name: &str, max_files_checks: 
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    // Need to test that tmux sessions can be created, session switched to, multiple windows can be
-    // opened for bare repositories, python environments can be found and activated
-    // #[test]
-    // fn read_search_path() {
-    //     use crate::Config;
-
-    //     confy::store(
-    //         "tms-test",
-    //         Config {
-    //             search_path: "/home".to_string(),
-    //             excluded_dirs: Vec::new(),
-    //         },
-    //     )
-    //     .unwrap();
-    //     let config: Config = confy::load("tms-test").unwrap();
-    //     assert_eq!(config.search_path, "/home");
-    // }
 }

@@ -1,13 +1,13 @@
 [package]
 name = "tmux-sessionizer"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jared Moulton <jaredmoulton3@gmail.com>"]
 edition = "2021"
 license = "MIT"
 description = """
-Tmux Sessionizer is a cli tool to fuzzy find all git repositories under a specified folder and open
-them as a new tmux session. Also, for git worktrees, this tool opens all checked out worktrees as
-new windows. 
+Tmux Sessionizer is a cli tool to fuzzy find all git repositories in a list of
+specified folders and open them as a new tmux session. Also, for git worktrees,
+this tool opens all checked out worktrees as new windows. 
 """
 homepage = "https://github.com/jrmoulton/tmux-sessionizer"
 repository = "https://github.com/jrmoulton/tmux-sessionizer"
