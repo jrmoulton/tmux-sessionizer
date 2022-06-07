@@ -71,6 +71,6 @@ Clone the repository and install using ```cargo install --path . --force```
 
 ## Notes
 
-I use the `tmux sessions` command to get a tmux styled output of the running session and I use that
+I use the `tms sessions` command to get a tmux styled output of the running session and I use that
 output on the bottom right of my tmux status bar. E.g. ![tmux status bar](images/tmux-status-bar.png)
 If there is an easier way to do this someone please tell me. 
