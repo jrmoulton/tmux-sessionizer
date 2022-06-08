@@ -11,8 +11,6 @@ are automatically opened as new windows, specific directories can be excluded, a
 be set, killing a session jumps you to a default, and it is a goal to handle more edge case
 scenarios. 
 
-This CLI tool also pairs well with my [git-repo-clone tool](https://github.com/jrmoulton/git-repo-clone).
-
 ![tms-gif](images/tms-v0_1_1.gif)
 
 ## Usage
