@@ -11,6 +11,10 @@ are automatically opened as new windows, specific directories can be excluded, a
 be set, killing a session jumps you to a default, and it is a goal to handle more edge case
 scenarios. 
 
+Tmux has keybindings built-in to allow you to switch between sessions. By default these are `leader-(` and `leader-)`
+
+Switching between windows is done by default with `leader-p` and `leader-n`
+
 ![tms-gif](images/tms-v0_1_1.gif)
 
 ## Usage
