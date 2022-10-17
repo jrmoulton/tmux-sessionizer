@@ -1,6 +1,6 @@
 [package]
 name = "tmux-sessionizer"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Jared Moulton <jaredmoulton3@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -19,7 +19,7 @@ exclude = [
 
 [dependencies]
 git2 = "0.14"
-clap = "3.1"
+clap = { version = "3.1", features = ["cargo"] }
 skim = "0.9"
 confy = "0.4"
 serde_derive = "1.0"
