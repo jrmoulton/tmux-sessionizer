@@ -47,6 +47,9 @@ OPTIONS:
         --excluded <excluded dirs>...
             As many directory names as desired to not be searched over
 
+        --full-path <display full path>
+            Use the full path when displaying directories [posible values: true, false]
+
     -h, --help
             Print help information
 

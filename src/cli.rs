@@ -13,7 +13,7 @@ pub enum OptionGiven {
 pub fn create_app() -> ArgMatches {
     Command::new("tmux-sessionizer")
         .author("Jared Moulton <jaredmoulton3@gmail.com>")
-        .version("0.1.1")
+        .version(clap::crate_version!())
         .about("Scan for all git folders in specified directories, select one and open it as a new tmux session")
         .subcommand(
             Command::new("config")
@@ -51,6 +51,14 @@ pub fn create_app() -> ArgMatches {
                         .multiple_values(true)
                         .long("remove")
                         .help("As many directory names to be removed from the exclusion list")
+                )
+                .arg(
+                    Arg::new("display full path")
+                        .required(false)
+                        .takes_value(true)
+                        .possible_values(["true", "false"])
+                        .long("full-path")
+                        .help("Use the full path when displaying directories")
                 )
         )
         .subcommand(Command::new("kill")
@@ -97,6 +105,16 @@ pub fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven> {
             defaults.default_session = sub_cmd_matches
                 .value_of("default session")
                 .map(|val| val.replace('.', "_"));
+
+            defaults.display_full_path = match sub_cmd_matches.value_of("display full path") {
+                Some(value) => match value {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => unreachable!(),
+                },
+                None => defaults.display_full_path,
+            };
+
             match sub_cmd_matches.values_of("excluded dirs") {
                 Some(dirs) => defaults
                     .excluded_dirs
@@ -113,6 +131,7 @@ pub fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven> {
                 search_paths: defaults.search_paths,
                 excluded_dirs: defaults.excluded_dirs,
                 default_session: defaults.default_session,
+                display_full_path: defaults.display_full_path,
             };
 
             confy::store("tms", config)?;

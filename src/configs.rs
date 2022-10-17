@@ -12,6 +12,7 @@ pub struct Config {
     pub search_paths: Vec<String>,
     pub excluded_dirs: Vec<String>,
     pub default_session: Option<String>,
+    pub display_full_path: Option<bool>,
 }
 
 pub trait UpgradeConfig {
@@ -30,6 +31,7 @@ impl UpgradeConfig for Result<Config, confy::ConfyError> {
                     search_paths: path,
                     excluded_dirs: old_config.excluded_dirs,
                     default_session: None,
+                    display_full_path: None,
                 })
             }
         }

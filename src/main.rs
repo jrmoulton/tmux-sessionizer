@@ -35,7 +35,11 @@ fn main() -> Result<()> {
         ));
     }
 
-    let repos = find_repos(config.search_paths, config.excluded_dirs)?;
+    let repos = find_repos(
+        config.search_paths,
+        config.excluded_dirs,
+        config.display_full_path,
+    )?;
     let repo_name = get_single_selection(&repos)?;
 
     let found_repo = repos
@@ -57,14 +61,21 @@ fn main() -> Result<()> {
         found_repo.path().parent().unwrap().to_string()?
     };
 
+    let repo_short_name = std::path::PathBuf::from(&repo_name)
+        .file_name()
+        .unwrap()
+        .to_string()?;
+
     if !session_previously_existed {
-        execute_tmux_command(&format!("tmux new-session -ds {repo_name} -c {path}",))?;
-        set_up_tmux_env(found_repo, &repo_name)?;
+        execute_tmux_command(&format!(
+            "tmux new-session -ds {repo_short_name } -c {path}",
+        ))?;
+        set_up_tmux_env(found_repo, &repo_short_name)?;
     }
 
     execute_tmux_command(&format!(
         "tmux switch-client -t {}",
-        repo_name.replace('.', "_")
+        repo_short_name.replace('.', "_")
     ))?;
 
     Ok(())
@@ -125,7 +136,11 @@ fn get_single_selection(repos: &impl RepoContainer) -> Result<String> {
     Ok(skim_output.selected_items[0].output().to_string())
 }
 
-fn find_repos(paths: Vec<String>, excluded_dirs: Vec<String>) -> Result<impl RepoContainer> {
+fn find_repos(
+    paths: Vec<String>,
+    excluded_dirs: Vec<String>,
+    display_full_path: Option<bool>,
+) -> Result<impl RepoContainer> {
     let mut repos = HashMap::new();
     let mut to_search = VecDeque::new();
 
@@ -136,7 +151,12 @@ fn find_repos(paths: Vec<String>, excluded_dirs: Vec<String>) -> Result<impl Rep
     while let Some(file) = to_search.pop_front() {
         if !excluded_dirs.contains(&file.file_name().unwrap().to_string()?) {
             if let Ok(repo) = git2::Repository::open(file.clone()) {
-                let name = file.file_name().unwrap().to_string()?;
+                let name;
+                if let Some(true) = display_full_path {
+                    name = file.to_string()?;
+                } else {
+                    name = file.file_name().unwrap().to_string()?;
+                }
                 repos.insert_repo(name, repo);
             } else if file.is_dir() {
                 to_search.extend(fs::read_dir(file)?.map(|path| path.unwrap().path()));
