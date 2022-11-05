@@ -75,9 +75,12 @@ Clone the repository and install using ```cargo install --path . --force```
 
 ## Usage Notes
 
-The 'tms sessions' command can be used to get a styled output of the active sessions with an asterisk on the current session. E.g. ![tmux status bar](images/tmux-status-bar.png)
-If this configuration is used it can be helpful to rebind the default tmux keys for switching sessions so that the status bar is refreshed on every session switch. This can be configured with settings
-like this.
+The 'tms sessions' command can be used to get a styled output of the active sessions with an asterisk on the current session. The configuration would look something like this
+```
+set -g status-right " #(tms sessions)"
+```
+E.g. ![tmux status bar](images/tmux-status-bar.png)
+If this configuration is used it can be helpful to rebind the default tmux keys for switching sessions so that the status bar is refreshed on every session switch. This can be configured with settings like this.
 ```
 bind -r '(' switch-client -p\; refresh-client -S
 bind -r ')' switch-client -n\; refresh-client -S
