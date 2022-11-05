@@ -1,30 +1,11 @@
 use std::{error::Error, fmt::Display};
 
-use crate::{
-    configs::{Config, OldConfig},
-    execute_tmux_command, ConfigError, Suggestion,
-};
+use crate::{configs::Config, execute_tmux_command, ConfigError};
 use clap::{Arg, ArgMatches, Command};
 use error_stack::{IntoReport, Result, ResultExt};
 
-#[derive(Debug)]
-pub(crate) enum CliError {
-    ConfigError,
-}
-impl Display for CliError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{self:?}"))
-    }
-}
-impl Error for CliError {}
-
-pub enum OptionGiven {
-    Yes,
-    No,
-}
-
 pub(crate) fn create_app() -> ArgMatches {
-    Command::new("tmux-sessionizer")
+    Command::new("tms")
         .author("Jared Moulton <jaredmoulton3@gmail.com>")
         .version(clap::crate_version!())
         .about("Scan for all git folders in specified directories, select one and open it as a new tmux session")
@@ -37,8 +18,7 @@ pub(crate) fn create_app() -> ArgMatches {
                         .short('p')
                         .long("paths")
                         .required(false)
-                        .takes_value(true)
-                        .multiple_values(true)
+                        .num_args(1..)
                         .help("The paths to search through. Paths must be full paths (no support for ~)")
                 )
                 .arg(
@@ -46,30 +26,29 @@ pub(crate) fn create_app() -> ArgMatches {
                         .short('s')
                         .long("session")
                         .required(false)
-                        .takes_value(true)
+                        .num_args(1)
                         .help("The default session to switch to (if avaliable) when killing another session")
                 )
                 .arg(
                     Arg::new("excluded dirs")
                         .long("excluded")
                         .required(false)
-                        .takes_value(true)
-                        .multiple_values(true)
+                        .num_args(1..)
                         .help("As many directory names as desired to not be searched over")
                 )
                 .arg(
                     Arg::new("remove dir")
                         .required(false)
-                        .takes_value(true)
-                        .multiple_values(true)
+                        .num_args(1..)
                         .long("remove")
                         .help("As many directory names to be removed from the exclusion list")
                 )
                 .arg(
                     Arg::new("display full path")
                         .required(false)
-                        .takes_value(true)
-                        .possible_values(["true", "false"])
+                        .num_args(1)
+                        .value_names(["true", "false"])
+                        .value_parser(clap::value_parser!(bool))
                         .long("full-path")
                         .help("Use the full path when displaying directories")
                 )
@@ -85,26 +64,14 @@ pub(crate) fn create_app() -> ArgMatches {
 
 pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, CliError> {
     match cli_args.subcommand() {
+        // Handle the config subcommand
         Some(("config", sub_cmd_matches)) => {
-            let defaults = confy::load::<Config>("tms");
-            let mut defaults = match defaults {
-                Ok(defaults) => defaults,
-                Err(_) => {
-                    let old_config = confy::load::<OldConfig>("tms")
-                        .into_report()
-                        .change_context(CliError::ConfigError)
-                        .attach_printable("Could not find a valid configuration").attach(Suggestion("Try using the `config` subcommand to ensure the search paths have been configured"))?;
-                    let path = vec![old_config.search_path];
-                    Config {
-                        search_paths: path,
-                        excluded_dirs: Some(old_config.excluded_dirs),
-                        ..Default::default()
-                    }
-                }
-            };
-            defaults.search_paths = match sub_cmd_matches.values_of("search paths") {
+            let mut defaults = confy::load::<Config>("tms", None)
+                .into_report()
+                .change_context(CliError::ConfigError)?;
+            defaults.search_paths = match sub_cmd_matches.get_many::<String>("search paths") {
                 Some(paths) => {
-                    let mut paths = paths.map(|x| x.to_owned()).collect::<Vec<String>>();
+                    let mut paths = paths.map(|x| x.to_string()).collect::<Vec<String>>();
                     paths.iter_mut().for_each(|path| {
                         *path = if path.chars().rev().next().unwrap() == '/' {
                             let mut path = path.to_string();
@@ -119,19 +86,14 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, C
                 None => defaults.search_paths,
             };
             defaults.default_session = sub_cmd_matches
-                .value_of("default session")
+                .get_one::<String>("default session")
                 .map(|val| val.replace('.', "_"));
 
-            defaults.display_full_path = match sub_cmd_matches.value_of("display full path") {
-                Some(value) => match value {
-                    "true" => Some(true),
-                    "false" => Some(false),
-                    _ => unreachable!(),
-                },
-                None => defaults.display_full_path,
-            };
+            defaults.display_full_path = sub_cmd_matches
+                .get_one::<bool>("display full path")
+                .copied();
 
-            if let Some(dirs) = sub_cmd_matches.values_of("excluded dirs") {
+            if let Some(dirs) = sub_cmd_matches.get_many::<String>("excluded dirs") {
                 let current_excluded = defaults.excluded_dirs;
                 match current_excluded {
                     Some(mut excl_dirs) => {
@@ -144,7 +106,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, C
                     }
                 }
             }
-            if let Some(dirs) = sub_cmd_matches.value_of("remove dir") {
+            if let Some(dirs) = sub_cmd_matches.get_one::<String>("remove dir") {
                 let current_excluded = defaults.excluded_dirs;
                 match current_excluded {
                     Some(mut excl_dirs) => {
@@ -162,7 +124,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, C
                 display_full_path: defaults.display_full_path,
             };
 
-            confy::store("tms", config)
+            confy::store("tms", None, config)
                 .into_report()
                 .change_context(ConfigError::WriteFailure)
                 .attach_printable("Failed to write the config file")
@@ -170,8 +132,10 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, C
             println!("Configuration has been stored");
             Ok(OptionGiven::Yes)
         }
+
+        // The kill subcommand will kill the current session and switch to anther one
         Some(("kill", _)) => {
-            let defaults = confy::load::<Config>("tms")
+            let defaults = confy::load::<Config>("tms", None)
                 .into_report()
                 .change_context(ConfigError::LoadError)
                 .attach_printable("Failed to load the config file")
@@ -200,20 +164,51 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, C
             execute_tmux_command(&format!("tmux kill-session -t {current_session}"));
             Ok(OptionGiven::Yes)
         }
+
+        // The sessions subcommand will print the sessions with an asterisk over the current
+        // session
         Some(("sessions", _)) => {
-            let sessions =
-                String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
-                    .expect("The tmux command static string should always be valid utf-9");
             let mut current_session =
                 String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
                     .expect("The tmux command static string should always be valid utf-9");
             current_session.retain(|x| x != '\'' && x != '\n');
-            let sessions = sessions
-                .replace('\n', " ")
-                .replace(&current_session, &format!("{current_session}*"));
-            println!("{sessions}");
+            let current_session_star = format!("{current_session}*");
+            let sessions =
+                String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
+                    .expect("The tmux command static string should always be valid utf-9")
+                    .split('\n')
+                    .map(String::from)
+                    .collect::<Vec<String>>();
+            let mut new_string = String::new();
+            for session in &sessions {
+                if session == &current_session {
+                    new_string.push_str(&current_session_star);
+                } else {
+                    new_string.push_str(session);
+                }
+                new_string.push(' ')
+            }
+            println!("{new_string}");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            execute_tmux_command("tmux refresh-client -S");
             Ok(OptionGiven::Yes)
         }
         _ => Ok(OptionGiven::No),
     }
+}
+
+#[derive(Debug)]
+pub(crate) enum CliError {
+    ConfigError,
+}
+impl Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{self:?}"))
+    }
+}
+impl Error for CliError {}
+
+pub enum OptionGiven {
+    Yes,
+    No,
 }

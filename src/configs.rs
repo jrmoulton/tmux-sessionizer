@@ -1,7 +1,6 @@
-use error_stack::{IntoReport, Result, ResultExt};
-use serde_derive::{Deserialize, Serialize};
+use std::fmt::Display;
 
-use crate::{Suggestion, TmsError};
+use serde_derive::{Deserialize, Serialize};
 
 #[derive(Debug)]
 pub(crate) enum ConfigError {
@@ -9,6 +8,16 @@ pub(crate) enum ConfigError {
     WriteFailure,
     LoadError,
 }
+impl Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoDefaultSearchPath => write!(f, "No default search path was found"),
+            Self::WriteFailure => write!(f, "Failure writing the config file"),
+            Self::LoadError => write!(f, "Error loading the config file"),
+        }
+    }
+}
+impl std::error::Error for ConfigError {}
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct OldConfig {
@@ -22,31 +31,4 @@ pub struct Config {
     pub excluded_dirs: Option<Vec<String>>,
     pub default_session: Option<String>,
     pub display_full_path: Option<bool>,
-}
-
-pub(crate) trait UpgradeConfig {
-    /// Upgrade a configuration if necessary
-    fn upgrade(self) -> Result<Config, TmsError>;
-}
-impl UpgradeConfig for std::result::Result<Config, confy::ConfyError> {
-    fn upgrade(self) -> Result<Config, TmsError> {
-        match self {
-            Ok(defaults) => Ok(defaults),
-            Err(_) => {
-                let old_config = confy::load::<OldConfig>("tms")
-                    .into_report()
-                    .change_context(TmsError::ConfigError)
-                    .attach_printable(
-                        "The configuration file does not match any internal structure",
-                    ).attach(Suggestion("Try using the `config` subcommand to configure options such as the search paths"))?;
-                let path = vec![old_config.search_path];
-                Ok(Config {
-                    search_paths: path,
-                    excluded_dirs: Some(old_config.excluded_dirs),
-                    default_session: None,
-                    display_full_path: None,
-                })
-            }
-        }
-    }
 }

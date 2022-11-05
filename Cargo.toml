@@ -1,6 +1,6 @@
 [package]
 name = "tmux-sessionizer"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Jared Moulton <jaredmoulton3@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -18,13 +18,13 @@ exclude = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-git2 = "0.14"
-clap = { version = "3.1", features = ["cargo"] }
-skim = "0.9"
-confy = "0.4"
+git2 = "0.15.0"
+clap = { version = "4.0.19", features = ["cargo"] }
+skim = "0.9.4"
+confy = "0.5.1"
 serde_derive = "1.0"
 serde = "1.0"
-error-stack = "0.2.3"
+error-stack = "0.2.4"
 owo-colors = "3.5.0"
 
 [[bin]]
