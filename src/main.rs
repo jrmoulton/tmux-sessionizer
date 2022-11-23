@@ -11,7 +11,6 @@ use crate::{
 use configs::ConfigError;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use git2::Repository;
-use owo_colors::OwoColorize;
 use repos::RepoContainer;
 use skim::prelude::*;
 use std::{
@@ -119,7 +118,7 @@ fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), TmsError> {
                 .ok_or(TmsError::NonUtf8Path)
                 .into_report()
                 .attach_printable("The selected repository has an unusable path")?;
-            let path_to_default_tree = format!("{}{}", head_short, repo.path().to_string()?,);
+            let path_to_default_tree = format!("{}{}", repo.path().to_string()?, head_short);
             let path = std::path::Path::new(&path_to_default_tree);
             repo.worktree(
                 head_short,
@@ -173,7 +172,7 @@ fn get_single_selection(repos: &impl RepoContainer) -> Result<String, TmsError> 
     let options = SkimOptionsBuilder::default()
         .height(Some("50%"))
         .multi(false)
-        .color(Some("bw"))
+        .color(Some("dark"))
         .build()
         .map_err(TmsError::FuzzyFindError)?;
     let item_reader = SkimItemReader::default();
@@ -201,9 +200,18 @@ fn find_repos(
     let mut repos = HashMap::new();
     let mut to_search = VecDeque::new();
 
-    paths
-        .iter()
-        .for_each(|path| to_search.push_back(std::path::PathBuf::from(path)));
+    for path in paths {
+        to_search.push_back(
+            std::fs::canonicalize(
+                shellexpand::full(&path)
+                    .into_report()
+                    .change_context(TmsError::IoError)?
+                    .to_string(),
+            )
+            .into_report()
+            .change_context(TmsError::IoError)?,
+        )
+    }
 
     let excluded_dirs = match excluded_dirs {
         Some(excluded_dirs) => excluded_dirs,
@@ -280,7 +288,12 @@ fn try_act_py_env(
 pub struct Suggestion(&'static str);
 impl Display for Suggestion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("Suggestion: {}", self.0).bold().green().to_string())
+        use owo_colors::OwoColorize;
+        f.write_str(
+            &owo_colors::OwoColorize::bold(&format!("Suggestion: {}", self.0))
+                .green()
+                .to_string(),
+        )
     }
 }
 

@@ -19,7 +19,7 @@ pub(crate) fn create_app() -> ArgMatches {
                         .long("paths")
                         .required(false)
                         .num_args(1..)
-                        .help("The paths to search through. Paths must be full paths (no support for ~)")
+                        .help("The paths to search through. ")
                 )
                 .arg(
                     Arg::new("default session")
