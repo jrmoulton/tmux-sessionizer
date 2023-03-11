@@ -5,7 +5,7 @@ The fastest way to manage projects as tmux sessions
 ## What is tmux-sessionizer?
 
 Tmux Sessionizer is a tmux session manager that is based on ThePrimeagen's
-[tmux-sessionizer](https://github.com/ThePrimeagen/.dotfiles/blob/master/bin/.local/bin/tmux-sessionizer)
+[tmux-sessionizer](https://github.com/ThePrimeagen/.dotfiles/blob/master/bin/.local/scripts/tmux-sessionizer)
 but is opinionated and personalized to my specific tmux workflow. And it's awesome. Git worktrees
 are automatically opened as new windows, specific directories can be excluded, a default session can
 be set, killing a session jumps you to a default, and it is a goal to handle more edge case
