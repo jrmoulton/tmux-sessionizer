@@ -31,4 +31,23 @@ pub struct Config {
     pub excluded_dirs: Option<Vec<String>>,
     pub default_session: Option<String>,
     pub display_full_path: Option<bool>,
+    pub sessions: Option<Vec<Session>>,
 }
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct Session {
+    pub name: Option<String>,
+    pub path: Option<String>,
+    pub windows: Option<Vec<Window>>,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct Window {
+    pub name: Option<String>,
+    pub path: Option<String>,
+    pub panes: Option<Vec<Pane>>,
+    pub command: Option<String>,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct Pane {}

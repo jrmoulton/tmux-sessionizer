@@ -53,6 +53,7 @@ pub(crate) fn create_app() -> ArgMatches {
                         .help("Use the full path when displaying directories")
                 )
         )
+        .subcommand(Command::new("start").about("Initialize tmux with the default sessions"))
         .subcommand(Command::new("kill")
             .about("Kill the current tmux session and jump to another")
         )
@@ -62,8 +63,59 @@ pub(crate) fn create_app() -> ArgMatches {
         .get_matches()
 }
 
-pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, CliError> {
+pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGiven, CliError> {
+    // Get the configuration from the config file
+    let config = confy::load::<Config>("tms", None)
+        .into_report()
+        .change_context(CliError::ConfigError)?;
     match cli_args.subcommand() {
+        Some(("start", _sub_cmd_matches)) => {
+            if let Some(sessions) = config.sessions {
+                for session in sessions {
+                    let mut sesssion_start_string = String::from("tmux new-session -d");
+                    if let Some(session_name) = session.name {
+                        sesssion_start_string.push_str(&format!(" -s {session_name}"));
+                    }
+                    if let Some(session_path) = session.path {
+                        sesssion_start_string.push_str(&format!(
+                            " -c {}",
+                            shellexpand::full(&session_path)
+                                .into_report()
+                                .change_context(CliError::IoError)?
+                        ))
+                    }
+                    execute_tmux_command(&sesssion_start_string);
+                    drop(sesssion_start_string); // just to be clear that this string is done
+                    if let Some(windows) = session.windows {
+                        for window in windows {
+                            let mut window_start_string = String::from("tmux new-window");
+                            if let Some(window_name) = window.name {
+                                window_start_string.push_str(&format!(" -n {window_name}"));
+                            }
+                            if let Some(window_path) = window.path {
+                                window_start_string.push_str(&format!(
+                                    " -c {}",
+                                    shellexpand::full(&window_path)
+                                        .into_report()
+                                        .change_context(CliError::IoError)?
+                                ));
+                            }
+                            execute_tmux_command(&window_start_string);
+                            if let Some(window_command) = window.command {
+                                execute_tmux_command(&format!(
+                                    "tmux send-keys {window_command} Enter"
+                                ));
+                            }
+                        }
+                        execute_tmux_command("tmux kill-window -t :1");
+                    }
+                }
+                execute_tmux_command("tmux attach");
+            } else {
+                execute_tmux_command("tmux");
+            }
+            Ok(SubCommandGiven::Yes)
+        }
         // Handle the config subcommand
         Some(("config", sub_cmd_matches)) => {
             let mut defaults = confy::load::<Config>("tms", None)
@@ -122,6 +174,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, C
                 excluded_dirs: defaults.excluded_dirs,
                 default_session: defaults.default_session,
                 display_full_path: defaults.display_full_path,
+                sessions: defaults.sessions,
             };
 
             confy::store("tms", None, config)
@@ -130,7 +183,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, C
                 .attach_printable("Failed to write the config file")
                 .change_context(CliError::ConfigError)?;
             println!("Configuration has been stored");
-            Ok(OptionGiven::Yes)
+            Ok(SubCommandGiven::Yes)
         }
 
         // The kill subcommand will kill the current session and switch to anther one
@@ -162,7 +215,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, C
             };
             execute_tmux_command(&format!("tmux switch-client -t {to_session}"));
             execute_tmux_command(&format!("tmux kill-session -t {current_session}"));
-            Ok(OptionGiven::Yes)
+            Ok(SubCommandGiven::Yes)
         }
 
         // The sessions subcommand will print the sessions with an asterisk over the current
@@ -191,15 +244,16 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<OptionGiven, C
             println!("{new_string}");
             std::thread::sleep(std::time::Duration::from_millis(100));
             execute_tmux_command("tmux refresh-client -S");
-            Ok(OptionGiven::Yes)
+            Ok(SubCommandGiven::Yes)
         }
-        _ => Ok(OptionGiven::No),
+        _ => Ok(SubCommandGiven::No(config)),
     }
 }
 
 #[derive(Debug)]
 pub(crate) enum CliError {
     ConfigError,
+    IoError,
 }
 impl Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -208,7 +262,7 @@ impl Display for CliError {
 }
 impl Error for CliError {}
 
-pub enum OptionGiven {
+pub enum SubCommandGiven {
     Yes,
-    No,
+    No(Config),
 }

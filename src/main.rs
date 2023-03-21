@@ -4,8 +4,7 @@ mod dirty_paths;
 mod repos;
 
 use crate::{
-    cli::{create_app, handle_sub_commands, OptionGiven},
-    configs::Config,
+    cli::{create_app, handle_sub_commands, SubCommandGiven},
     dirty_paths::DirtyUtf8Path,
 };
 use configs::ConfigError;
@@ -32,15 +31,11 @@ fn main() -> Result<(), TmsError> {
 
     // Use CLAP to parse the command line arguments
     let cli_args = create_app();
-    match handle_sub_commands(cli_args).change_context(TmsError::CliError)? {
-        OptionGiven::Yes => return Ok(()),
-        OptionGiven::No => {} // continue
-    }
+    let config = match handle_sub_commands(cli_args).change_context(TmsError::CliError)? {
+        SubCommandGiven::Yes => return Ok(()),
+        SubCommandGiven::No(config) => config, // continue
+    };
 
-    // Get the configuration from the config file
-    let config = confy::load::<Config>("tms", None)
-        .into_report()
-        .change_context(TmsError::ConfigError)?;
     if config.search_paths.is_empty() {
         return Err(ConfigError::NoDefaultSearchPath)
             .into_report()
@@ -92,15 +87,15 @@ fn main() -> Result<(), TmsError> {
         ));
         set_up_tmux_env(found_repo, &repo_short_name)?;
     }
+
     execute_tmux_command(&format!(
         "tmux switch-client -t {}",
         repo_short_name.replace('.', "_")
     ));
-
     Ok(())
 }
 
-fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), TmsError> {
+pub(crate) fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), TmsError> {
     if repo.is_bare() {
         if repo
             .worktrees()
@@ -155,15 +150,16 @@ fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), TmsError> {
         // Kill that first extra window
         execute_tmux_command(&format!("tmux kill-window -t {repo_name}:1"));
     } else {
-        try_act_py_env(repo, repo_name, 50)?;
+        // Extra stuff?? I removed launcing python environments here but that could be exposed in the configuration
     }
     Ok(())
 }
 
-fn execute_tmux_command(command: &str) -> process::Output {
+pub fn execute_tmux_command(command: &str) -> process::Output {
     let args: Vec<&str> = command.split(' ').skip(1).collect();
     process::Command::new("tmux")
         .args(args)
+        .stdin(process::Stdio::inherit())
         .output()
         .unwrap_or_else(|_| panic!("Failed to execute the tmux command `{command}`"))
 }
@@ -243,47 +239,6 @@ fn find_repos(
     Ok(repos)
 }
 
-fn try_act_py_env(
-    found_repo: &Repository,
-    found_name: &str,
-    max_files_checks: u32,
-) -> Result<(), TmsError> {
-    let mut find_py_env = VecDeque::new();
-    let dir = fs::read_dir(found_repo.path().parent().unwrap())
-        .into_report()
-        .change_context(TmsError::IoError)?;
-    find_py_env.extend(dir);
-
-    let mut count = 0;
-    while !find_py_env.is_empty() && count < max_files_checks {
-        let file = find_py_env.pop_front().unwrap().unwrap();
-        count += 1;
-        if file.file_name().to_str().unwrap().contains("pyvenv") {
-            std::process::Command::new("tmux")
-                .arg("send-keys")
-                .arg("-t")
-                .arg(found_name)
-                .arg(format!(
-                    "source {}/bin/activate",
-                    file.path().parent().unwrap().to_str().unwrap()
-                ))
-                .arg("Enter")
-                .output()
-                .into_report()
-                .change_context(TmsError::IoError)?;
-            execute_tmux_command(&format!("tmux send-keys -t {found_name} clear Enter",));
-            return Ok(());
-        } else if file.path().is_dir() {
-            find_py_env.extend(
-                fs::read_dir(file.path())
-                    .into_report()
-                    .change_context(TmsError::IoError)?,
-            );
-        }
-    }
-    Ok(())
-}
-
 #[derive(Debug)]
 pub struct Suggestion(&'static str);
 impl Display for Suggestion {
@@ -319,3 +274,6 @@ impl Display for TmsError {
     }
 }
 impl Error for TmsError {}
+
+#[cfg(test)]
+mod tests;
