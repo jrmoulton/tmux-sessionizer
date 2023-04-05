@@ -31,7 +31,7 @@ fn main() -> Result<(), TmsError> {
 
     // Use CLAP to parse the command line arguments
     let cli_args = create_app();
-    let config = match handle_sub_commands(cli_args).change_context(TmsError::CliError)? {
+    let config = match handle_sub_commands(cli_args)? {
         SubCommandGiven::Yes => return Ok(()),
         SubCommandGiven::No(config) => config, // continue
     };
@@ -51,7 +51,7 @@ fn main() -> Result<(), TmsError> {
         config.excluded_dirs,
         config.display_full_path,
     )?;
-    let repo_name = get_single_selection(&repos)?;
+    let repo_name = get_single_selection(repos.repo_string(), None)?;
     let found_repo = repos
         .find_repo(&repo_name)
         .expect("The internal represenation of the selected repository should be present");
@@ -164,15 +164,16 @@ pub fn execute_tmux_command(command: &str) -> process::Output {
         .unwrap_or_else(|_| panic!("Failed to execute the tmux command `{command}`"))
 }
 
-fn get_single_selection(repos: &impl RepoContainer) -> Result<String, TmsError> {
+fn get_single_selection(list: String, preview: Option<&str>) -> Result<String, TmsError> {
     let options = SkimOptionsBuilder::default()
         .height(Some("50%"))
+        .preview(preview)
         .multi(false)
         .color(Some("dark"))
         .build()
         .map_err(TmsError::FuzzyFindError)?;
     let item_reader = SkimItemReader::default();
-    let item = item_reader.of_bufread(Cursor::new(repos.repo_string()));
+    let item = item_reader.of_bufread(Cursor::new(list));
     let skim_output = Skim::run_with(&options, Some(item))
         .ok_or_else(|| TmsError::FuzzyFindError("Fuzzy finder internal errors".into()))?;
     if skim_output.is_abort {
@@ -255,11 +256,11 @@ impl Display for Suggestion {
 #[derive(Debug)]
 pub(crate) enum TmsError {
     CliError,
-    ConfigError,
     GitError,
     NonUtf8Path,
     FuzzyFindError(String),
     IoError,
+    ConfigError,
 }
 impl Display for TmsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

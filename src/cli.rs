@@ -1,6 +1,4 @@
-use std::{error::Error, fmt::Display};
-
-use crate::{configs::Config, execute_tmux_command, ConfigError};
+use crate::{configs::Config, execute_tmux_command, get_single_selection, ConfigError, TmsError};
 use clap::{Arg, ArgMatches, Command};
 use error_stack::{IntoReport, Result, ResultExt};
 
@@ -54,6 +52,7 @@ pub(crate) fn create_app() -> ArgMatches {
                 )
         )
         .subcommand(Command::new("start").about("Initialize tmux with the default sessions"))
+        .subcommand(Command::new("switch").about("Display other sessions with a fuzzy finder and a preview window"))
         .subcommand(Command::new("kill")
             .about("Kill the current tmux session and jump to another")
         )
@@ -63,11 +62,11 @@ pub(crate) fn create_app() -> ArgMatches {
         .get_matches()
 }
 
-pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGiven, CliError> {
+pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGiven, TmsError> {
     // Get the configuration from the config file
     let config = confy::load::<Config>("tms", None)
         .into_report()
-        .change_context(CliError::ConfigError)?;
+        .change_context(TmsError::ConfigError)?;
     match cli_args.subcommand() {
         Some(("start", _sub_cmd_matches)) => {
             if let Some(sessions) = config.sessions {
@@ -81,7 +80,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                             " -c {}",
                             shellexpand::full(&session_path)
                                 .into_report()
-                                .change_context(CliError::IoError)?
+                                .change_context(TmsError::IoError)?
                         ))
                     }
                     execute_tmux_command(&sesssion_start_string);
@@ -97,7 +96,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                                     " -c {}",
                                     shellexpand::full(&window_path)
                                         .into_report()
-                                        .change_context(CliError::IoError)?
+                                        .change_context(TmsError::IoError)?
                                 ));
                             }
                             execute_tmux_command(&window_start_string);
@@ -116,11 +115,33 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             }
             Ok(SubCommandGiven::Yes)
         }
+
+        Some(("switch", _sub_cmd_matches)) => {
+            let mut sessions = String::from_utf8(
+                execute_tmux_command(
+                    "tmux list-sessions -F '#{?session_attached,,#{session_name}}",
+                )
+                .stdout,
+            )
+            .unwrap();
+            sessions = sessions
+                .replace('\'', "")
+                .replace("\n\n", "\n")
+                .trim()
+                .to_string();
+            let target_session = get_single_selection(sessions, Some("tmux capture-pane -ept {}"))?;
+            execute_tmux_command(&format!(
+                "tmux switch-client -t {}",
+                target_session.replace('.', "_")
+            ));
+
+            Ok(SubCommandGiven::Yes)
+        }
         // Handle the config subcommand
         Some(("config", sub_cmd_matches)) => {
             let mut defaults = confy::load::<Config>("tms", None)
                 .into_report()
-                .change_context(CliError::ConfigError)?;
+                .change_context(TmsError::ConfigError)?;
             defaults.search_paths = match sub_cmd_matches.get_many::<String>("search paths") {
                 Some(paths) => {
                     let mut paths = paths.map(|x| x.to_string()).collect::<Vec<String>>();
@@ -181,7 +202,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 .into_report()
                 .change_context(ConfigError::WriteFailure)
                 .attach_printable("Failed to write the config file")
-                .change_context(CliError::ConfigError)?;
+                .change_context(TmsError::ConfigError)?;
             println!("Configuration has been stored");
             Ok(SubCommandGiven::Yes)
         }
@@ -192,7 +213,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 .into_report()
                 .change_context(ConfigError::LoadError)
                 .attach_printable("Failed to load the config file")
-                .change_context(CliError::ConfigError)?;
+                .change_context(TmsError::ConfigError)?;
             let mut current_session =
                 String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
                     .expect("The tmux command static string should always be valid utf-9");
@@ -249,18 +270,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
         _ => Ok(SubCommandGiven::No(config)),
     }
 }
-
-#[derive(Debug)]
-pub(crate) enum CliError {
-    ConfigError,
-    IoError,
-}
-impl Display for CliError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{self:?}"))
-    }
-}
-impl Error for CliError {}
 
 pub enum SubCommandGiven {
     Yes,
