@@ -22,7 +22,10 @@ Switching between windows is done by default with `leader-p` and `leader-n`
 
 ### The `tms` command
 
-Running `tms` will find the repos and fuzzy find on them
+Running `tms` will find the repos and fuzzy find on them. It is very conveneint to bind the tms
+command to a tmux keybinding so that you don't have to leave your text editor to open a new project.
+I have this tmux binding `bind C-o display-popup -E "tms"`. See the image below for what this look
+like with the `tms switch` keybinding
 
 ### The `tms switch` command
 
