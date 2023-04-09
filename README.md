@@ -60,27 +60,18 @@ Options:
 ### Configuring defaults
 
 ```
-USAGE:
-    tms config [OPTIONS]
+Configure the defaults for search paths and excluded directories
 
-OPTIONS:
-        --excluded <excluded dirs>...
-            As many directory names as desired to not be searched over
+Usage: tms config [OPTIONS]
 
-        --full-path <display full path>
-            Use the full path when displaying directories [posible values: true, false]
+Options:
+  -p, --paths <search paths>...      The paths to search through. Shell like expansions such as `~` are supported
+  -s, --session <default session>    The default session to switch to (if avaliable) when killing another session
+      --excluded <excluded dirs>...  As many directory names as desired to not be searched over
+      --remove <remove dir>...       As many directory names to be removed from the exclusion list
+      --full-path <true> <false>     Use the full path when displaying directories [possible values: true, false]
+  -h, --help                         Print help
 
-    -h, --help
-            Print help information
-
-    -p, --paths <search paths>...
-            The paths to search through. Paths must be full paths (no support for ~)
-
-        --remove <remove dir>...
-            As many directory names to be removed from the exclusion list
-
-    -s, --session <default session>
-            The default session to switch to (if avaliable) when killing another session
 ```
 
 ## Installation

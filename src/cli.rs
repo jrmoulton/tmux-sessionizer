@@ -17,7 +17,7 @@ pub(crate) fn create_app() -> ArgMatches {
                         .long("paths")
                         .required(false)
                         .num_args(1..)
-                        .help("The paths to search through. ")
+                        .help("The paths to search through. Shell like expansions such as `~` are supported")
                 )
                 .arg(
                     Arg::new("default session")
