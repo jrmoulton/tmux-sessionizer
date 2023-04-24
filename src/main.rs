@@ -54,14 +54,14 @@ fn main() -> Result<(), TmsError> {
     let repo_name = get_single_selection(repos.repo_string(), None)?;
     let found_repo = repos
         .find_repo(&repo_name)
-        .expect("The internal represenation of the selected repository should be present");
+        .expect("The internal representation of the selected repository should be present");
     let path = if found_repo.is_bare() {
         found_repo.path().to_string()?
     } else {
         found_repo
             .path()
             .parent()
-            .expect("bare repositores should all have parent directories")
+            .expect("bare repositories should all have parent directories")
             .to_string()?
     };
     let repo_short_name = std::path::PathBuf::from(&repo_name)
@@ -150,7 +150,7 @@ pub(crate) fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), 
         // Kill that first extra window
         execute_tmux_command(&format!("tmux kill-window -t {repo_name}:1"));
     } else {
-        // Extra stuff?? I removed launcing python environments here but that could be exposed in the configuration
+        // Extra stuff?? I removed launching python environments here but that could be exposed in the configuration
     }
     Ok(())
 }
