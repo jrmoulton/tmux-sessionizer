@@ -27,6 +27,7 @@ serde = "1.0"
 error-stack = "0.2.4"
 owo-colors = "3.5.0"
 shellexpand = "2.1.2"
+aho-corasick = "1.0.1"
 
 [[bin]]
 name = "tms"
