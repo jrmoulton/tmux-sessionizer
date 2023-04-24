@@ -20,6 +20,7 @@ use std::{
     io::Cursor,
     process,
 };
+use aho_corasick::{AhoCorasickBuilder, MatchKind};
 
 fn main() -> Result<(), TmsError> {
     // Install debug hooks for formatting of error handling
@@ -214,12 +215,16 @@ fn find_repos(
         Some(excluded_dirs) => excluded_dirs,
         None => Vec::new(),
     };
+    let excluder = AhoCorasickBuilder::new()
+        .match_kind(MatchKind::LeftmostFirst)
+        .build(&excluded_dirs)
+        .unwrap();
     while let Some(file) = to_search.pop_front() {
         let file_name = file
             .file_name()
             .expect("The file name doesn't end in `..`")
             .to_string()?;
-        if !excluded_dirs.contains(&file_name) {
+        if !excluder.is_match(&file.as_path().to_string().unwrap()) {
             if let Ok(repo) = git2::Repository::open(file.clone()) {
                 let name = if let Some(true) = display_full_path {
                     file.to_string()?
