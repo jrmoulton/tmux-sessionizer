@@ -7,6 +7,7 @@ use crate::{
     cli::{create_app, handle_sub_commands, SubCommandGiven},
     dirty_paths::DirtyUtf8Path,
 };
+use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use configs::ConfigError;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use git2::Repository;
@@ -20,7 +21,6 @@ use std::{
     io::Cursor,
     process,
 };
-use aho_corasick::{AhoCorasickBuilder, MatchKind};
 
 fn main() -> Result<(), TmsError> {
     // Install debug hooks for formatting of error handling
@@ -218,13 +218,14 @@ fn find_repos(
     let excluder = AhoCorasickBuilder::new()
         .match_kind(MatchKind::LeftmostFirst)
         .build(&excluded_dirs)
-        .unwrap();
+        .into_report()
+        .change_context(TmsError::IoError)?;
     while let Some(file) = to_search.pop_front() {
         let file_name = file
             .file_name()
             .expect("The file name doesn't end in `..`")
             .to_string()?;
-        if !excluder.is_match(&file.as_path().to_string().unwrap()) {
+        if !excluder.is_match(&file.as_path().to_string()?) {
             if let Ok(repo) = git2::Repository::open(file.clone()) {
                 let name = if let Some(true) = display_full_path {
                     file.to_string()?
