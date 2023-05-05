@@ -219,26 +219,32 @@ fn find_repos(
         .into_report()
         .change_context(TmsError::IoError)?;
     while let Some(file) = to_search.pop_front() {
+        if excluder.is_match(&file.as_path().to_string()?) {
+            continue;
+        }
+
         let file_name = file
             .file_name()
             .expect("The file name doesn't end in `..`")
             .to_string()?;
-        if !excluder.is_match(&file.as_path().to_string()?) {
-            if let Ok(repo) = git2::Repository::open(file.clone()) {
-                let name = if let Some(true) = display_full_path {
-                    file.to_string()?
-                } else {
-                    file_name
-                };
-                repos.insert_repo(name, repo);
-            } else if file.is_dir() {
-                to_search.extend(
-                    fs::read_dir(file)
-                        .into_report()
-                        .change_context(TmsError::IoError)?
-                        .map(|dir_entry| dir_entry.expect("Found non-valid utf8 path").path()),
-                );
+
+        if let Ok(repo) = git2::Repository::open(file.clone()) {
+            if repo.is_worktree() {
+                continue;
             }
+            let name = if let Some(true) = display_full_path {
+                file.to_string()?
+            } else {
+                file_name
+            };
+            repos.insert_repo(name, repo);
+        } else if file.is_dir() {
+            to_search.extend(
+                fs::read_dir(file)
+                    .into_report()
+                    .change_context(TmsError::IoError)?
+                    .map(|dir_entry| dir_entry.expect("Found non-valid utf8 path").path()),
+            );
         }
     }
     Ok(repos)
