@@ -68,7 +68,8 @@ fn main() -> Result<(), TmsError> {
     let repo_short_name = std::path::PathBuf::from(&repo_name)
         .file_name()
         .expect("None of the paths here should terminate in `..`")
-        .to_string()?;
+        .to_string()?
+        .replace('.', "_");
 
     // Get the tmux sessions
     let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
@@ -89,10 +90,7 @@ fn main() -> Result<(), TmsError> {
         set_up_tmux_env(found_repo, &repo_short_name)?;
     }
 
-    execute_tmux_command(&format!(
-        "tmux switch-client -t {}",
-        repo_short_name.replace('.', "_")
-    ));
+    execute_tmux_command(&format!("tmux switch-client -t {}", repo_short_name));
     Ok(())
 }
 
