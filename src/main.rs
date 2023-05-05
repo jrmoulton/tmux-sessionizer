@@ -149,7 +149,7 @@ pub(crate) fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), 
             ));
         }
         // Kill that first extra window
-        execute_tmux_command(&format!("tmux kill-window -t {repo_name}:1"));
+        execute_tmux_command(&format!("tmux kill-window -t {repo_name}:^"));
     } else {
         // Extra stuff?? I removed launching python environments here but that could be exposed in the configuration
     }
