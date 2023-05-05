@@ -73,7 +73,7 @@ fn main() -> Result<(), TmsError> {
     // Get the tmux sessions
     let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
         .into_report()
-        .expect("The tmux command static string should always be valid utf-9");
+        .expect("The tmux command static string should always be valid utf-8");
     let mut sessions = sessions.lines();
 
     // If the session already exists switch to it, else create the new session and then switch
