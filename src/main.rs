@@ -90,7 +90,10 @@ fn main() -> Result<(), TmsError> {
         set_up_tmux_env(found_repo, &repo_short_name)?;
     }
 
-    execute_tmux_command(&format!("tmux switch-client -t {}", repo_short_name));
+    let result = execute_tmux_command(&format!("tmux switch-client -t {repo_short_name}"));
+    if !result.status.success() {
+        execute_tmux_command(&format!("tmux attach -t {repo_short_name}"));
+    }
     Ok(())
 }
 
