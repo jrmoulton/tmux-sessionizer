@@ -81,7 +81,7 @@ fn main() -> Result<(), TmsError> {
     let session_previously_existed = sessions.any(|line| {
         // tmux will return the output with extra ' and \n characters
         line.to_owned().retain(|char| char != '\'' && char != '\n');
-        line == repo_name
+        line == repo_short_name
     });
     if !session_previously_existed {
         execute_tmux_command(&format!(
