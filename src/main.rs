@@ -246,7 +246,8 @@ fn find_repos(
                 fs::read_dir(file)
                     .into_report()
                     .change_context(TmsError::IoError)?
-                    .map(|dir_entry| dir_entry.expect("Found non-valid utf8 path").path()),
+                    .map(|dir_entry| dir_entry.expect("Found non-valid utf8 path").path())
+                    .filter(|path| path.is_dir()), // let's only add directories and see if quicker
             );
         }
     }
