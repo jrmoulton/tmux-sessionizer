@@ -212,6 +212,8 @@ fn find_repos(
         )
     }
 
+    let config_roots = Vec::from(to_search.clone());
+
     let excluded_dirs = match excluded_dirs {
         Some(excluded_dirs) => excluded_dirs,
         None => Vec::new(),
@@ -223,6 +225,9 @@ fn find_repos(
         .change_context(TmsError::IoError)?;
     while let Some(file) = to_search.pop_front() {
         if excluder.is_match(&file.as_path().to_string()?) {
+            continue;
+        }
+        if path_too_deep(&config_roots, &file) > 5 {
             continue;
         }
 
@@ -252,6 +257,16 @@ fn find_repos(
         }
     }
     Ok(repos)
+}
+
+fn path_too_deep(roots: &Vec<std::path::PathBuf>, path: &std::path::PathBuf) -> usize {
+    for root in roots {
+        match path.strip_prefix(root) {
+            Ok(relative_path) => return relative_path.ancestors().count(),
+            Err(_) => continue,
+        }
+    }
+    return std::usize::MAX;
 }
 
 #[derive(Debug)]
