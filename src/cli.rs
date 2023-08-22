@@ -50,6 +50,14 @@ pub(crate) fn create_app() -> ArgMatches {
                         .long("full-path")
                         .help("Use the full path when displaying directories")
                 )
+                .arg(
+                    Arg::new("max search depth")
+                        .required(false)
+                        .num_args(1)
+                        .value_parser(clap::value_parser!(usize))
+                        .long("max-depth")
+                        .help("Limit search to this many directories under your search paths")
+                )
         )
         .subcommand(Command::new("start").about("Initialize tmux with the default sessions"))
         .subcommand(Command::new("switch").about("Display other sessions with a fuzzy finder and a preview window"))
@@ -165,6 +173,9 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             defaults.display_full_path = sub_cmd_matches
                 .get_one::<bool>("display full path")
                 .copied();
+            defaults.max_depth = sub_cmd_matches
+                .get_one::<usize>("max search depth")
+                .copied();
 
             if let Some(dirs) = sub_cmd_matches.get_many::<String>("excluded dirs") {
                 let current_excluded = defaults.excluded_dirs;
@@ -195,6 +206,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 excluded_dirs: defaults.excluded_dirs,
                 default_session: defaults.default_session,
                 display_full_path: defaults.display_full_path,
+                max_depth: defaults.max_depth,
                 sessions: defaults.sessions,
             };
 

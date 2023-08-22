@@ -51,6 +51,7 @@ fn main() -> Result<(), TmsError> {
         config.search_paths,
         config.excluded_dirs,
         config.display_full_path,
+        config.max_depth,
     )?;
     let repo_name = get_single_selection(repos.repo_string(), None)?;
     let found_repo = repos
@@ -195,6 +196,7 @@ fn find_repos(
     paths: Vec<String>,
     excluded_dirs: Option<Vec<String>>,
     display_full_path: Option<bool>,
+    max_search_depth: Option<usize>,
 ) -> Result<impl RepoContainer, TmsError> {
     let mut repos = HashMap::new();
     let mut to_search = VecDeque::new();
@@ -227,8 +229,14 @@ fn find_repos(
         if excluder.is_match(&file.as_path().to_string()?) {
             continue;
         }
-        if path_too_deep(&config_roots, &file) > 5 {
-            continue;
+
+        match max_search_depth {
+            Some(depth) => {
+                if path_too_deep(&config_roots, &file) > depth {
+                    continue;
+                }
+            }
+            None => {}
         }
 
         let file_name = file

@@ -32,6 +32,7 @@ pub struct Config {
     pub default_session: Option<String>,
     pub display_full_path: Option<bool>,
     pub sessions: Option<Vec<Session>>,
+    pub max_depth: Option<usize>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
