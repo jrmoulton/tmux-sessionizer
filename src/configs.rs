@@ -20,18 +20,25 @@ impl Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 #[derive(Default, Debug, Serialize, Deserialize)]
-pub struct OldConfig {
-    pub search_path: String,
-    pub excluded_dirs: Vec<String>,
-}
-
-#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Config {
-    pub search_paths: Vec<String>,
+    pub search_paths: Vec<String>, // old format, deprecated
+    pub search_dirs: Vec<SearchDirectory>,
     pub excluded_dirs: Option<Vec<String>>,
     pub default_session: Option<String>,
     pub display_full_path: Option<bool>,
     pub sessions: Option<Vec<Session>>,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct SearchDirectory {
+    pub path: String,
+    pub depth: Option<usize>,
+}
+
+impl SearchDirectory {
+    pub(crate) fn new(path: String, depth: Option<usize>) -> Self {
+        SearchDirectory { path, depth }
+    }
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
