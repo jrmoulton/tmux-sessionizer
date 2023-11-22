@@ -90,6 +90,11 @@ fn main() -> Result<(), TmsError> {
         set_up_tmux_env(found_repo, &repo_short_name)?;
     }
 
+    if !is_in_tmux_session() {
+        execute_tmux_command(&format!("tmux attach -t {repo_short_name}"));
+        return Ok(());
+    }
+
     let result = execute_tmux_command(&format!("tmux switch-client -t {repo_short_name}"));
     if !result.status.success() {
         execute_tmux_command(&format!("tmux attach -t {repo_short_name}"));
@@ -164,6 +169,10 @@ pub fn execute_tmux_command(command: &str) -> process::Output {
         .stdin(process::Stdio::inherit())
         .output()
         .unwrap_or_else(|_| panic!("Failed to execute the tmux command `{command}`"))
+}
+
+fn is_in_tmux_session() -> bool {
+    std::env::var("TERM_PROGRAM").is_ok_and(|program| program == "tmux")
 }
 
 fn get_single_selection(list: String, preview: Option<&str>) -> Result<String, TmsError> {
