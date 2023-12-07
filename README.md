@@ -37,6 +37,14 @@ popup is displayed (and it's fast)
 
 ![tms-switch](images/tms_switch-v2_1.png)
 
+### The `tms windows` command
+
+Similar to `tms switch`, you can show other active windows in the current session with a fuzzy
+finder and a preview window. A config for use with `display-popup`, could look like this 
+`bind C-w display-popup -E "tms windows"`.
+
+### CLI overview
+
 Use `tms --help`
 
 ```
@@ -48,6 +56,7 @@ Commands:
   config    Configure the defaults for search paths and excluded directories
   start     Initialize tmux with the default sessions
   switch    Display other sessions with a fuzzy finder and a preview window
+  windows   Display the current session's windows with a fuzzy finder and a preview window
   kill      Kill the current tmux session and jump to another
   sessions  Show running tmux sessions with asterisk on the current session
   help      Print this message or the help of the given subcommand(s)
@@ -75,6 +84,8 @@ Options:
 ```
 
 ## Installation
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/tmux-sessionizer.svg)](https://repology.org/project/tmux-sessionizer/versions)
 
 ### Cargo
 

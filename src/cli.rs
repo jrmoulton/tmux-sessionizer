@@ -65,6 +65,7 @@ pub(crate) fn create_app() -> ArgMatches {
         )
         .subcommand(Command::new("start").about("Initialize tmux with the default sessions"))
         .subcommand(Command::new("switch").about("Display other sessions with a fuzzy finder and a preview window"))
+        .subcommand(Command::new("windows").about("Display the current session's windows with a fuzzy finder and a preview window"))
         .subcommand(Command::new("kill")
             .about("Kill the current tmux session and jump to another")
         )
@@ -140,6 +141,28 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             execute_tmux_command(&format!(
                 "tmux switch-client -t {}",
                 target_session.replace('.', "_")
+            ));
+
+            Ok(SubCommandGiven::Yes)
+        }
+
+        Some(("windows", _sub_cmd_matches)) => {
+            let mut windows = String::from_utf8(
+                execute_tmux_command(
+                    "tmux list-windows -F '#{?window_attached,,#{window_name}}",
+                )
+                .stdout,
+            )
+            .unwrap();
+            windows = windows
+                .replace('\'', "")
+                .replace("\n\n", "\n")
+                .trim()
+                .to_string();
+            let target_window = get_single_selection(windows, Some("tmux capture-pane -ept {}"))?;
+            execute_tmux_command(&format!(
+                "tmux select-window -t {}",
+                target_window.replace('.', "_")
             ));
 
             Ok(SubCommandGiven::Yes)
