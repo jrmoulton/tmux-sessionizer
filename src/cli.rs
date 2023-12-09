@@ -1,6 +1,9 @@
-use crate::{configs::Config, configs::SearchDirectory, execute_tmux_command, get_single_selection, ConfigError, TmsError};
+use crate::{
+    configs::Config, configs::SearchDirectory, execute_tmux_command, get_single_selection,
+    ConfigError, TmsError,
+};
 use clap::{Arg, ArgMatches, Command};
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 
 pub(crate) fn create_app() -> ArgMatches {
     Command::new("tms")
@@ -73,9 +76,7 @@ pub(crate) fn create_app() -> ArgMatches {
 
 pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGiven, TmsError> {
     // Get the configuration from the config file
-    let config = confy::load::<Config>("tms", None)
-        .into_report()
-        .change_context(TmsError::ConfigError)?;
+    let config = confy::load::<Config>("tms", None).change_context(TmsError::ConfigError)?;
     match cli_args.subcommand() {
         Some(("start", _sub_cmd_matches)) => {
             if let Some(sessions) = config.sessions {
@@ -87,9 +88,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                     if let Some(session_path) = session.path {
                         sesssion_start_string.push_str(&format!(
                             " -c {}",
-                            shellexpand::full(&session_path)
-                                .into_report()
-                                .change_context(TmsError::IoError)?
+                            shellexpand::full(&session_path).change_context(TmsError::IoError)?
                         ))
                     }
                     execute_tmux_command(&sesssion_start_string);
@@ -104,7 +103,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                                 window_start_string.push_str(&format!(
                                     " -c {}",
                                     shellexpand::full(&window_path)
-                                        .into_report()
                                         .change_context(TmsError::IoError)?
                                 ));
                             }
@@ -148,9 +146,8 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
         }
         // Handle the config subcommand
         Some(("config", sub_cmd_matches)) => {
-            let mut defaults = confy::load::<Config>("tms", None)
-                .into_report()
-                .change_context(TmsError::ConfigError)?;
+            let mut defaults =
+                confy::load::<Config>("tms", None).change_context(TmsError::ConfigError)?;
 
             let max_depths = match sub_cmd_matches.get_many::<usize>("max depth") {
                 Some(depths) => depths.collect::<Vec<_>>(),
@@ -161,7 +158,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                     .into_iter()
                     .zip(max_depths.into_iter().chain(std::iter::repeat(&10)))
                     .map(|(path, depth)| {
-                        let path = if path.chars().rev().next().unwrap() == '/' {
+                        let path = if path.ends_with('/') {
                             let mut modified_path = path.clone();
                             modified_path.pop();
                             modified_path
@@ -216,7 +213,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             };
 
             confy::store("tms", None, config)
-                .into_report()
                 .change_context(ConfigError::WriteFailure)
                 .attach_printable("Failed to write the config file")
                 .change_context(TmsError::ConfigError)?;
@@ -227,7 +223,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
         // The kill subcommand will kill the current session and switch to anther one
         Some(("kill", _)) => {
             let defaults = confy::load::<Config>("tms", None)
-                .into_report()
                 .change_context(ConfigError::LoadError)
                 .attach_printable("Failed to load the config file")
                 .change_context(TmsError::ConfigError)?;

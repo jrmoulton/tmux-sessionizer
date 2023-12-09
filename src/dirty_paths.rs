@@ -1,4 +1,4 @@
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 
 use crate::TmsError;
 
@@ -11,7 +11,6 @@ impl DirtyUtf8Path for std::path::PathBuf {
         Ok(self
             .to_str()
             .ok_or(TmsError::NonUtf8Path)
-            .into_report()
             .attach_printable("Not a valid utf8 path")?
             .to_string())
     }
@@ -21,7 +20,6 @@ impl DirtyUtf8Path for std::path::Path {
         Ok(self
             .to_str()
             .ok_or(TmsError::NonUtf8Path)
-            .into_report()
             .attach_printable("Not a valid utf8 path")?
             .to_string())
     }
@@ -31,7 +29,6 @@ impl DirtyUtf8Path for std::ffi::OsStr {
         Ok(self
             .to_str()
             .ok_or(TmsError::NonUtf8Path)
-            .into_report()
             .attach_printable("Not a valid utf8 path")?
             .to_string())
     }

@@ -10,10 +10,13 @@ use crate::{
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use configs::ConfigError;
 use configs::SearchDirectory;
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use git2::Repository;
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
 use repos::RepoContainer;
 use skim::prelude::*;
+use std::sync::Mutex;
 use std::{
     collections::{HashMap, VecDeque},
     error::Error,
@@ -22,9 +25,6 @@ use std::{
     io::Cursor,
     process,
 };
-use std::sync::Mutex;
-use rayon::iter::IntoParallelRefIterator;
-use rayon::iter::ParallelIterator;
 
 fn main() -> Result<(), TmsError> {
     // Install debug hooks for formatting of error handling
@@ -43,12 +43,16 @@ fn main() -> Result<(), TmsError> {
 
     // merge old search paths with new search directories
     if !config.search_paths.is_empty() {
-        config.search_dirs.extend(config.search_paths.into_iter().map(|path| SearchDirectory::new(path, Some(10))));
+        config.search_dirs.extend(
+            config
+                .search_paths
+                .into_iter()
+                .map(|path| SearchDirectory::new(path, Some(10))),
+        );
     }
 
     if config.search_dirs.is_empty() {
         return Err(ConfigError::NoDefaultSearchPath)
-            .into_report()
             .attach_printable(
                 "You must configure at least one default search path with the `config` subcommand. E.g `tms config` ",
             )
@@ -82,7 +86,6 @@ fn main() -> Result<(), TmsError> {
 
     // Get the tmux sessions
     let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
-        .into_report()
         .expect("The tmux command static string should always be valid utf-8");
     let mut sessions = sessions.lines();
 
@@ -110,19 +113,14 @@ pub(crate) fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), 
     if repo.is_bare() {
         if repo
             .worktrees()
-            .into_report()
             .change_context(TmsError::GitError)?
             .is_empty()
         {
             // Add the default branch as a tree (usually either main or master)
-            let head = repo
-                .head()
-                .into_report()
-                .change_context(TmsError::GitError)?;
+            let head = repo.head().change_context(TmsError::GitError)?;
             let head_short = head
                 .shorthand()
                 .ok_or(TmsError::NonUtf8Path)
-                .into_report()
                 .attach_printable("The selected repository has an unusable path")?;
             let path_to_default_tree = format!("{}{}", repo.path().to_string()?, head_short);
             let path = std::path::Path::new(&path_to_default_tree);
@@ -131,25 +129,15 @@ pub(crate) fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), 
                 path,
                 Some(git2::WorktreeAddOptions::new().reference(Some(&head))),
             )
-            .into_report()
             .change_context(TmsError::GitError)?;
         }
-        for tree in repo
-            .worktrees()
-            .into_report()
-            .change_context(TmsError::GitError)?
-            .iter()
-        {
-            let tree = tree
-                .ok_or(TmsError::NonUtf8Path)
-                .into_report()
-                .attach_printable(format!(
-                    "The path to the found sub-tree {tree:?} has a non-utf8 path",
-                ))?;
+        for tree in repo.worktrees().change_context(TmsError::GitError)?.iter() {
+            let tree = tree.ok_or(TmsError::NonUtf8Path).attach_printable(format!(
+                "The path to the found sub-tree {tree:?} has a non-utf8 path",
+            ))?;
             let window_name = tree.to_string();
             let path_to_tree = repo
                 .find_worktree(tree)
-                .into_report()
                 .change_context(TmsError::GitError)?
                 .path()
                 .to_string()?;
@@ -192,9 +180,8 @@ fn get_single_selection(list: String, preview: Option<&str>) -> Result<String, T
     }
     Ok(skim_output
         .selected_items
-        .get(0)
+        .first()
         .ok_or(TmsError::CliError)
-        .into_report()
         .attach_printable("No selection made")?
         .output()
         .to_string())
@@ -214,8 +201,7 @@ fn find_repos(
     };
     let excluder = AhoCorasickBuilder::new()
         .match_kind(MatchKind::LeftmostFirst)
-        .build(&excluded_dirs)
-        .into_report()
+        .build(excluded_dirs)
         .change_context(TmsError::IoError)?;
 
     // iterate over directories
@@ -223,20 +209,21 @@ fn find_repos(
         .par_iter()
         .flat_map(|dir| {
             let canonical_path = std::fs::canonicalize(
-            shellexpand::full(&dir.path)
-                    .into_report()
+                shellexpand::full(&dir.path)
                     .change_context(TmsError::IoError)
                     .unwrap_or_default()
                     .to_string(),
-                )
-                .into_report()
-                .change_context(TmsError::IoError)
-                .unwrap_or_default();
+            )
+            .change_context(TmsError::IoError)
+            .unwrap_or_default();
 
             let to_search = Arc::new(Mutex::new(VecDeque::from(vec![canonical_path])));
             let mut dir_repos = Vec::new();
             let mut level = 0;
-            while to_search.lock().unwrap().len() > 0 && dir.depth.is_some() && dir.depth.unwrap() >= level {
+            while to_search.lock().unwrap().len() > 0
+                && dir.depth.is_some()
+                && dir.depth.unwrap() >= level
+            {
                 level += 1;
 
                 let files = to_search.lock().unwrap().clone();
@@ -255,7 +242,7 @@ fn find_repos(
                             .unwrap();
 
                         if file.is_dir() && file.join(".git").exists() {
-                            return match Repository::open(&file) {
+                            return match Repository::open(file) {
                                 Ok(repo) => {
                                     if repo.is_worktree() {
                                         return None;
@@ -268,20 +255,15 @@ fn find_repos(
 
                                     Some((name, repo))
                                 }
-                                Err(_) => {
-                                    None
-                                }
-                            }
+                                Err(_) => None,
+                            };
                         } else if file.is_dir() {
                             to_search.lock().unwrap().extend(
-                                fs::read_dir(&file)
-                                    .into_report()
+                                fs::read_dir(file)
                                     .change_context(TmsError::IoError)
                                     .unwrap()
                                     .map(|dir_entry| {
-                                        dir_entry
-                                            .expect("Found non-valid utf8 path")
-                                            .path()
+                                        dir_entry.expect("Found non-valid utf8 path").path()
                                     })
                                     .filter(|path| path.is_dir()),
                             );
