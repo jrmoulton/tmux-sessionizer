@@ -1,6 +1,9 @@
-use crate::{configs::Config, execute_tmux_command, get_single_selection, ConfigError, TmsError};
+use crate::{
+    configs::Config, configs::SearchDirectory, execute_tmux_command, get_single_selection,
+    ConfigError, TmsError,
+};
 use clap::{Arg, ArgMatches, Command};
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 
 pub(crate) fn create_app() -> ArgMatches {
     Command::new("tms")
@@ -25,7 +28,7 @@ pub(crate) fn create_app() -> ArgMatches {
                         .long("session")
                         .required(false)
                         .num_args(1)
-                        .help("The default session to switch to (if avaliable) when killing another session")
+                        .help("The default session to switch to (if available) when killing another session")
                 )
                 .arg(
                     Arg::new("excluded dirs")
@@ -50,6 +53,15 @@ pub(crate) fn create_app() -> ArgMatches {
                         .long("full-path")
                         .help("Use the full path when displaying directories")
                 )
+                .arg(
+                    Arg::new("max depth")
+                        .required(false)
+                        .num_args(1..)
+                        .value_parser(clap::value_parser!(usize))
+                        .short('d')
+                        .long("max-depth")
+                        .help("The maximum depth to traverse when searching for repositories in the search paths, length should match the number of search paths if specified (defaults to 10)")
+                )
         )
         .subcommand(Command::new("start").about("Initialize tmux with the default sessions"))
         .subcommand(Command::new("switch").about("Display other sessions with a fuzzy finder and a preview window"))
@@ -64,9 +76,7 @@ pub(crate) fn create_app() -> ArgMatches {
 
 pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGiven, TmsError> {
     // Get the configuration from the config file
-    let config = confy::load::<Config>("tms", None)
-        .into_report()
-        .change_context(TmsError::ConfigError)?;
+    let config = confy::load::<Config>("tms", None).change_context(TmsError::ConfigError)?;
     match cli_args.subcommand() {
         Some(("start", _sub_cmd_matches)) => {
             if let Some(sessions) = config.sessions {
@@ -78,9 +88,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                     if let Some(session_path) = session.path {
                         sesssion_start_string.push_str(&format!(
                             " -c {}",
-                            shellexpand::full(&session_path)
-                                .into_report()
-                                .change_context(TmsError::IoError)?
+                            shellexpand::full(&session_path).change_context(TmsError::IoError)?
                         ))
                     }
                     execute_tmux_command(&sesssion_start_string);
@@ -95,7 +103,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                                 window_start_string.push_str(&format!(
                                     " -c {}",
                                     shellexpand::full(&window_path)
-                                        .into_report()
                                         .change_context(TmsError::IoError)?
                                 ));
                             }
@@ -139,25 +146,31 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
         }
         // Handle the config subcommand
         Some(("config", sub_cmd_matches)) => {
-            let mut defaults = confy::load::<Config>("tms", None)
-                .into_report()
-                .change_context(TmsError::ConfigError)?;
-            defaults.search_paths = match sub_cmd_matches.get_many::<String>("search paths") {
-                Some(paths) => {
-                    let mut paths = paths.map(|x| x.to_string()).collect::<Vec<String>>();
-                    paths.iter_mut().for_each(|path| {
-                        *path = if path.chars().rev().next().unwrap() == '/' {
-                            let mut path = path.to_string();
-                            path.pop();
-                            path
-                        } else {
-                            path.to_owned()
-                        }
-                    });
-                    paths
-                }
-                None => defaults.search_paths,
+            let mut defaults =
+                confy::load::<Config>("tms", None).change_context(TmsError::ConfigError)?;
+
+            let max_depths = match sub_cmd_matches.get_many::<usize>("max depth") {
+                Some(depths) => depths.collect::<Vec<_>>(),
+                None => Vec::new(),
             };
+            defaults.search_dirs = match sub_cmd_matches.get_many::<String>("search paths") {
+                Some(paths) => paths
+                    .into_iter()
+                    .zip(max_depths.into_iter().chain(std::iter::repeat(&10)))
+                    .map(|(path, depth)| {
+                        let path = if path.ends_with('/') {
+                            let mut modified_path = path.clone();
+                            modified_path.pop();
+                            modified_path
+                        } else {
+                            path.clone()
+                        };
+                        SearchDirectory::new(path, Some(*depth))
+                    })
+                    .collect(),
+                None => Vec::new(),
+            };
+
             defaults.default_session = sub_cmd_matches
                 .get_one::<String>("default session")
                 .map(|val| val.replace('.', "_"));
@@ -192,6 +205,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             }
             let config = Config {
                 search_paths: defaults.search_paths,
+                search_dirs: defaults.search_dirs,
                 excluded_dirs: defaults.excluded_dirs,
                 default_session: defaults.default_session,
                 display_full_path: defaults.display_full_path,
@@ -199,7 +213,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             };
 
             confy::store("tms", None, config)
-                .into_report()
                 .change_context(ConfigError::WriteFailure)
                 .attach_printable("Failed to write the config file")
                 .change_context(TmsError::ConfigError)?;
@@ -210,7 +223,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
         // The kill subcommand will kill the current session and switch to anther one
         Some(("kill", _)) => {
             let defaults = confy::load::<Config>("tms", None)
-                .into_report()
                 .change_context(ConfigError::LoadError)
                 .attach_printable("Failed to load the config file")
                 .change_context(TmsError::ConfigError)?;

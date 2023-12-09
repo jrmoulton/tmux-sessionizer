@@ -11,7 +11,7 @@ are automatically opened as new windows, specific directories can be excluded, a
 be set, killing a session jumps you to a default, and it is a goal to handle more edge case
 scenarios.
 
-Tmux has keybindings built-in to allow you to switch between sessions. By default these are
+Tmux has keybindings built-in to allow you to switch between sessions. By default, these are
 `leader-(` and `leader-)`
 
 Switching between windows is done by default with `leader-p` and `leader-n`
@@ -22,7 +22,7 @@ Switching between windows is done by default with `leader-p` and `leader-n`
 
 ### The `tms` command
 
-Running `tms` will find the repos and fuzzy find on them. It is very conveneint to bind the tms
+Running `tms` will find the repos and fuzzy find on them. It is very convenient to bind the tms
 command to a tmux keybinding so that you don't have to leave your text editor to open a new project.
 I have this tmux binding `bind C-o display-popup -E "tms"`. See the image below for what this look
 like with the `tms switch` keybinding
