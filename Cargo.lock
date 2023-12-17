@@ -1225,7 +1225,6 @@ dependencies = [
  "git2",
  "once_cell",
  "owo-colors",
- "rayon",
  "serde",
  "serde_derive",
  "shellexpand",
