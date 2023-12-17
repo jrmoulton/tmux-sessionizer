@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, path::PathBuf};
 
 use serde_derive::{Deserialize, Serialize};
 
@@ -31,12 +31,12 @@ pub struct Config {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct SearchDirectory {
-    pub path: String,
-    pub depth: Option<usize>,
+    pub path: PathBuf,
+    pub depth: usize,
 }
 
 impl SearchDirectory {
-    pub(crate) fn new(path: String, depth: Option<usize>) -> Self {
+    pub(crate) fn new(path: PathBuf, depth: usize) -> Self {
         SearchDirectory { path, depth }
     }
 }

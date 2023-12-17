@@ -1,3 +1,5 @@
+use std::fs::canonicalize;
+
 use crate::{
     configs::Config, configs::SearchDirectory, execute_tmux_command, get_single_selection,
     ConfigError, TmsError,
@@ -148,10 +150,8 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
 
         Some(("windows", _sub_cmd_matches)) => {
             let mut windows = String::from_utf8(
-                execute_tmux_command(
-                    "tmux list-windows -F '#{?window_attached,,#{window_name}}",
-                )
-                .stdout,
+                execute_tmux_command("tmux list-windows -F '#{?window_attached,,#{window_name}}")
+                    .stdout,
             )
             .unwrap();
             windows = windows
@@ -188,9 +188,18 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                         } else {
                             path.clone()
                         };
-                        SearchDirectory::new(path, Some(*depth))
+                        shellexpand::full(&path)
+                            .map(|val| (val.to_string(), *depth))
+                            .change_context(TmsError::IoError)
                     })
-                    .collect(),
+                    .collect::<Result<Vec<(String, usize)>, TmsError>>()?
+                    .iter()
+                    .map(|(path, depth)| {
+                        canonicalize(path)
+                            .map(|val| SearchDirectory::new(val, *depth))
+                            .change_context(TmsError::IoError)
+                    })
+                    .collect::<Result<Vec<SearchDirectory>, TmsError>>()?,
                 None => Vec::new(),
             };
 

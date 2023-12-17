@@ -12,11 +12,10 @@ use configs::ConfigError;
 use configs::SearchDirectory;
 use error_stack::{Report, Result, ResultExt};
 use git2::Repository;
-use rayon::iter::IntoParallelRefIterator;
-use rayon::iter::ParallelIterator;
+
 use repos::RepoContainer;
 use skim::prelude::*;
-use std::sync::Mutex;
+use std::fs::canonicalize;
 use std::{
     collections::{HashMap, VecDeque},
     error::Error,
@@ -43,12 +42,21 @@ fn main() -> Result<(), TmsError> {
 
     // merge old search paths with new search directories
     if !config.search_paths.is_empty() {
-        config.search_dirs.extend(
-            config
-                .search_paths
-                .into_iter()
-                .map(|path| SearchDirectory::new(path, Some(10))),
-        );
+        config
+            .search_dirs
+            .extend(config.search_paths.into_iter().map(|path| {
+                SearchDirectory::new(
+                    canonicalize(
+                        shellexpand::full(&path)
+                            .change_context(TmsError::IoError)
+                            .unwrap()
+                            .to_string(),
+                    )
+                    .change_context(TmsError::IoError)
+                    .unwrap(),
+                    10,
+                )
+            }));
     }
 
     if config.search_dirs.is_empty() {
@@ -193,8 +201,12 @@ fn find_repos(
     display_full_path: Option<bool>,
 ) -> Result<impl RepoContainer, TmsError> {
     let mut repos = HashMap::new();
+    let mut to_search = VecDeque::new();
 
-    // excluder
+    for search_directory in directories {
+        to_search.push_back(search_directory);
+    }
+
     let excluded_dirs = match excluded_dirs {
         Some(excluded_dirs) => excluded_dirs,
         None => Vec::new(),
@@ -203,86 +215,36 @@ fn find_repos(
         .match_kind(MatchKind::LeftmostFirst)
         .build(excluded_dirs)
         .change_context(TmsError::IoError)?;
+    while let Some(file) = to_search.pop_front() {
+        if excluder.is_match(&file.path.to_string()?) {
+            continue;
+        }
 
-    // iterate over directories
-    let repo_results: Vec<_> = directories
-        .par_iter()
-        .flat_map(|dir| {
-            let canonical_path = std::fs::canonicalize(
-                shellexpand::full(&dir.path)
-                    .change_context(TmsError::IoError)
-                    .unwrap_or_default()
-                    .to_string(),
-            )
-            .change_context(TmsError::IoError)
-            .unwrap_or_default();
+        let file_name = file
+            .path
+            .file_name()
+            .expect("The file name doesn't end in `..`")
+            .to_string()?;
 
-            let to_search = Arc::new(Mutex::new(VecDeque::from(vec![canonical_path])));
-            let mut dir_repos = Vec::new();
-            let mut level = 0;
-            while to_search.lock().unwrap().len() > 0
-                && dir.depth.is_some()
-                && dir.depth.unwrap() >= level
-            {
-                level += 1;
-
-                let files = to_search.lock().unwrap().clone();
-                to_search.lock().unwrap().clear();
-
-                let level_repos: Vec<_> = files
-                    .par_iter()
-                    .filter(|file| {
-                        !excluder.is_match(&file.as_path().to_string().unwrap_or_default())
-                    })
-                    .flat_map(|file| {
-                        let file_name = file
-                            .file_name()
-                            .expect("The file name doesn't end in `..`")
-                            .to_string()
-                            .unwrap();
-
-                        if file.is_dir() && file.join(".git").exists() {
-                            return match Repository::open(file) {
-                                Ok(repo) => {
-                                    if repo.is_worktree() {
-                                        return None;
-                                    }
-
-                                    let name = match display_full_path {
-                                        Some(true) => file.to_string().unwrap(),
-                                        _ => file_name.clone(),
-                                    };
-
-                                    Some((name, repo))
-                                }
-                                Err(_) => None,
-                            };
-                        } else if file.is_dir() {
-                            to_search.lock().unwrap().extend(
-                                fs::read_dir(file)
-                                    .change_context(TmsError::IoError)
-                                    .unwrap()
-                                    .map(|dir_entry| {
-                                        dir_entry.expect("Found non-valid utf8 path").path()
-                                    })
-                                    .filter(|path| path.is_dir()),
-                            );
-                        }
-
-                        None
-                    })
-                    .collect();
-                dir_repos.extend(level_repos);
+        if let Ok(repo) = git2::Repository::open(file.path.clone()) {
+            if repo.is_worktree() {
+                continue;
             }
-
-            dir_repos
-        })
-        .collect();
-
-    for (name, repo) in repo_results {
-        repos.insert_repo(name, repo);
+            let name = if let Some(true) = display_full_path {
+                file.path.to_string()?
+            } else {
+                file_name
+            };
+            repos.insert_repo(name, repo);
+        } else if file.path.is_dir() && file.depth > 0 {
+            let read_dir = fs::read_dir(file.path)
+                .change_context(TmsError::IoError)?
+                .map(|dir_entry| dir_entry.expect("Found non-valid utf8 path").path());
+            for dir in read_dir {
+                to_search.push_back(SearchDirectory::new(dir, file.depth - 1))
+            }
+        }
     }
-
     Ok(repos)
 }
 
