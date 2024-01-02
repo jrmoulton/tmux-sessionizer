@@ -26,6 +26,7 @@ pub struct Config {
     pub excluded_dirs: Option<Vec<String>>,
     pub default_session: Option<String>,
     pub display_full_path: Option<bool>,
+    pub search_submodules: Option<bool>,
     pub sessions: Option<Vec<Session>>,
 }
 

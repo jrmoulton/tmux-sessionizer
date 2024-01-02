@@ -79,6 +79,7 @@ Options:
       --excluded <excluded dirs>...  As many directory names as desired to not be searched over
       --remove <remove dir>...       As many directory names to be removed from the exclusion list
       --full-path <true> <false>     Use the full path when displaying directories [possible values: true, false]
+      --search-submodules <true> <false> Also show initialized submodules [possible values: true, false]
   -h, --help                         Print help
 
 ```
