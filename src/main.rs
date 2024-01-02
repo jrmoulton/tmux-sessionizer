@@ -11,7 +11,7 @@ use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use configs::ConfigError;
 use configs::SearchDirectory;
 use error_stack::{Report, Result, ResultExt};
-use git2::Repository;
+use git2::{Repository, Submodule};
 
 use repos::RepoContainer;
 use skim::prelude::*;
@@ -72,6 +72,7 @@ fn main() -> Result<(), TmsError> {
         config.search_dirs,
         config.excluded_dirs,
         config.display_full_path,
+        config.search_submodules,
     )?;
     let repo_name = get_single_selection(repos.repo_string(), None)?;
     let found_repo = repos
@@ -81,8 +82,7 @@ fn main() -> Result<(), TmsError> {
         found_repo.path().to_string()?
     } else {
         found_repo
-            .path()
-            .parent()
+            .workdir()
             .expect("bare repositories should all have parent directories")
             .to_string()?
     };
@@ -199,6 +199,7 @@ fn find_repos(
     directories: Vec<SearchDirectory>,
     excluded_dirs: Option<Vec<String>>,
     display_full_path: Option<bool>,
+    search_submodules: Option<bool>,
 ) -> Result<impl RepoContainer, TmsError> {
     let mut repos = HashMap::new();
     let mut to_search = VecDeque::new();
@@ -235,6 +236,9 @@ fn find_repos(
             } else {
                 file_name
             };
+            if let (Some(true), Ok(submodules)) = (search_submodules, repo.submodules()) {
+                find_submodules(submodules, &name, &mut repos, display_full_path)?;
+            }
             repos.insert_repo(name, repo);
         } else if file.path.is_dir() && file.depth > 0 {
             let read_dir = fs::read_dir(file.path)
@@ -246,6 +250,38 @@ fn find_repos(
         }
     }
     Ok(repos)
+}
+
+fn find_submodules(
+    submodules: Vec<Submodule>,
+    parent_name: &String,
+    repos: &mut impl RepoContainer,
+    display_full_path: Option<bool>,
+) -> Result<(), TmsError> {
+    for submodule in submodules.iter() {
+        let repo = match submodule.open() {
+            Ok(repo) => repo,
+            _ => continue,
+        };
+        let path = match repo.workdir() {
+            Some(path) => path,
+            _ => continue,
+        };
+        let submodule_file_name = path
+            .file_name()
+            .expect("The file name doesn't end in `..`")
+            .to_string()?;
+        let name = if let Some(true) = display_full_path {
+            path.to_string()?
+        } else {
+            format!("{}>{}", parent_name, submodule_file_name)
+        };
+        if let Ok(submodules) = repo.submodules() {
+            find_submodules(submodules, &name, repos, display_full_path)?;
+        }
+        repos.insert_repo(name, repo);
+    }
+    Ok(())
 }
 
 #[derive(Debug)]

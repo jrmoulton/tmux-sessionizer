@@ -56,6 +56,15 @@ pub(crate) fn create_app() -> ArgMatches {
                         .help("Use the full path when displaying directories")
                 )
                 .arg(
+                    Arg::new("search submodules")
+                        .required(false)
+                        .num_args(1)
+                        .value_names(["true", "false"])
+                        .value_parser(clap::value_parser!(bool))
+                        .long("search-submodules")
+                        .help("Also show initialized submodules")
+                )
+                .arg(
                     Arg::new("max depth")
                         .required(false)
                         .num_args(1..)
@@ -211,6 +220,10 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 .get_one::<bool>("display full path")
                 .copied();
 
+            defaults.search_submodules = sub_cmd_matches
+                .get_one::<bool>("search submodules")
+                .copied();
+
             if let Some(dirs) = sub_cmd_matches.get_many::<String>("excluded dirs") {
                 let current_excluded = defaults.excluded_dirs;
                 match current_excluded {
@@ -241,6 +254,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 excluded_dirs: defaults.excluded_dirs,
                 default_session: defaults.default_session,
                 display_full_path: defaults.display_full_path,
+                search_submodules: defaults.search_submodules,
                 sessions: defaults.sessions,
             };
 
