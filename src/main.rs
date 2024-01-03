@@ -84,6 +84,8 @@ fn main() -> Result<(), TmsError> {
         found_repo
             .workdir()
             .expect("bare repositories should all have parent directories")
+            .canonicalize()
+            .change_context(TmsError::IoError)?
             .to_string()?
     };
     let repo_short_name = std::path::PathBuf::from(&repo_name)
