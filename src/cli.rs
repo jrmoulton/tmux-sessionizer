@@ -209,20 +209,23 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                             .change_context(TmsError::IoError)
                     })
                     .collect::<Result<Vec<SearchDirectory>, TmsError>>()?,
-                None => Vec::new(),
+                None => defaults.search_dirs,
             };
 
-            defaults.default_session = sub_cmd_matches
+            if let Some(default_session) = sub_cmd_matches
                 .get_one::<String>("default session")
-                .map(|val| val.replace('.', "_"));
+                .map(|val| val.replace('.', "_"))
+            {
+                defaults.default_session = Some(default_session);
+            }
 
-            defaults.display_full_path = sub_cmd_matches
-                .get_one::<bool>("display full path")
-                .copied();
+            if let Some(display) = sub_cmd_matches.get_one::<bool>("display full path") {
+                defaults.display_full_path = Some(display.to_owned());
+            }
 
-            defaults.search_submodules = sub_cmd_matches
-                .get_one::<bool>("search submodules")
-                .copied();
+            if let Some(submodules) = sub_cmd_matches.get_one::<bool>("search submodules") {
+                defaults.search_submodules = Some(submodules.to_owned());
+            }
 
             if let Some(dirs) = sub_cmd_matches.get_many::<String>("excluded dirs") {
                 let current_excluded = defaults.excluded_dirs;
