@@ -21,12 +21,12 @@ impl std::error::Error for ConfigError {}
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Config {
-    pub search_paths: Vec<String>, // old format, deprecated
-    pub search_dirs: Vec<SearchDirectory>,
-    pub excluded_dirs: Option<Vec<String>>,
     pub default_session: Option<String>,
     pub display_full_path: Option<bool>,
     pub search_submodules: Option<bool>,
+    pub excluded_dirs: Option<Vec<String>>,
+    pub search_paths: Vec<String>, // old format, deprecated
+    pub search_dirs: Vec<SearchDirectory>,
     pub sessions: Option<Vec<Session>>,
 }
 
