@@ -260,7 +260,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             Ok(SubCommandGiven::Yes)
         }
 
-        // The kill subcommand will kill the current session and switch to anther one
+        // The kill subcommand will kill the current session and switch to another one
         Some(("kill", _)) => {
             let defaults = confy::load::<Config>("tms", None)
                 .change_context(ConfigError::LoadError)
