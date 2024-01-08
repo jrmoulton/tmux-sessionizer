@@ -26,7 +26,7 @@ serde_derive = "1.0"
 serde = "1.0"
 error-stack = "0.4.1"
 owo-colors = "4.0.0"
-shellexpand = "2.1.2"
+shellexpand = "3.1.0"
 aho-corasick = "1.0.1"
 
 [[bin]]
