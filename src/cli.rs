@@ -277,14 +277,14 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             let sessions: Vec<&str> = sessions.lines().collect();
 
             let to_session = if defaults.default_session.is_some()
-                && sessions.contains(&defaults.default_session.clone().unwrap().as_str())
-                && current_session != defaults.default_session.clone().unwrap()
+                && sessions.contains(&defaults.default_session.as_deref().unwrap())
+                && current_session != defaults.default_session.as_deref().unwrap()
             {
-                defaults.default_session.unwrap()
+                defaults.default_session.as_deref().unwrap()
             } else if current_session != sessions[0] {
-                sessions[0].to_string()
+                sessions[0]
             } else {
-                sessions.get(1).unwrap_or_else(|| &sessions[0]).to_string()
+                sessions.get(1).unwrap_or_else(|| &sessions[0])
             };
             execute_tmux_command(&format!("tmux switch-client -t {to_session}"));
             execute_tmux_command(&format!("tmux kill-session -t {current_session}"));
