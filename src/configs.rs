@@ -25,8 +25,8 @@ pub struct Config {
     pub display_full_path: Option<bool>,
     pub search_submodules: Option<bool>,
     pub excluded_dirs: Option<Vec<String>>,
-    pub search_paths: Vec<String>, // old format, deprecated
-    pub search_dirs: Vec<SearchDirectory>,
+    pub search_paths: Option<Vec<String>>, // old format, deprecated
+    pub search_dirs: Option<Vec<SearchDirectory>>,
     pub sessions: Option<Vec<Session>>,
 }
 

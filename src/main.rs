@@ -35,16 +35,17 @@ fn main() -> Result<(), TmsError> {
 
     // Use CLAP to parse the command line arguments
     let cli_args = create_app();
-    let mut config = match handle_sub_commands(cli_args)? {
+    let config = match handle_sub_commands(cli_args)? {
         SubCommandGiven::Yes => return Ok(()),
         SubCommandGiven::No(config) => config, // continue
     };
 
+    let mut search_dirs = config.search_dirs.unwrap_or(Vec::new());
+
     // merge old search paths with new search directories
-    if !config.search_paths.is_empty() {
-        config
-            .search_dirs
-            .extend(config.search_paths.into_iter().map(|path| {
+    if let Some(search_paths) = config.search_paths {
+        if !search_paths.is_empty() {
+            search_dirs.extend(search_paths.into_iter().map(|path| {
                 SearchDirectory::new(
                     canonicalize(
                         shellexpand::full(&path)
@@ -57,9 +58,10 @@ fn main() -> Result<(), TmsError> {
                     10,
                 )
             }));
+        }
     }
 
-    if config.search_dirs.is_empty() {
+    if search_dirs.is_empty() {
         return Err(ConfigError::NoDefaultSearchPath)
             .attach_printable(
                 "You must configure at least one default search path with the `config` subcommand. E.g `tms config` ",
@@ -69,7 +71,7 @@ fn main() -> Result<(), TmsError> {
 
     // Find repositories and present them with the fuzzy finder
     let repos = find_repos(
-        config.search_dirs,
+        search_dirs,
         config.excluded_dirs,
         config.display_full_path,
         config.search_submodules,

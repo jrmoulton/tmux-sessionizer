@@ -186,29 +186,31 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 None => Vec::new(),
             };
             config.search_dirs = match sub_cmd_matches.get_many::<String>("search paths") {
-                Some(paths) => paths
-                    .into_iter()
-                    .zip(max_depths.into_iter().chain(std::iter::repeat(&10)))
-                    .map(|(path, depth)| {
-                        let path = if path.ends_with('/') {
-                            let mut modified_path = path.clone();
-                            modified_path.pop();
-                            modified_path
-                        } else {
-                            path.clone()
-                        };
-                        shellexpand::full(&path)
-                            .map(|val| (val.to_string(), *depth))
-                            .change_context(TmsError::IoError)
-                    })
-                    .collect::<Result<Vec<(String, usize)>, TmsError>>()?
-                    .iter()
-                    .map(|(path, depth)| {
-                        canonicalize(path)
-                            .map(|val| SearchDirectory::new(val, *depth))
-                            .change_context(TmsError::IoError)
-                    })
-                    .collect::<Result<Vec<SearchDirectory>, TmsError>>()?,
+                Some(paths) => Some(
+                    paths
+                        .into_iter()
+                        .zip(max_depths.into_iter().chain(std::iter::repeat(&10)))
+                        .map(|(path, depth)| {
+                            let path = if path.ends_with('/') {
+                                let mut modified_path = path.clone();
+                                modified_path.pop();
+                                modified_path
+                            } else {
+                                path.clone()
+                            };
+                            shellexpand::full(&path)
+                                .map(|val| (val.to_string(), *depth))
+                                .change_context(TmsError::IoError)
+                        })
+                        .collect::<Result<Vec<(String, usize)>, TmsError>>()?
+                        .iter()
+                        .map(|(path, depth)| {
+                            canonicalize(path)
+                                .map(|val| SearchDirectory::new(val, *depth))
+                                .change_context(TmsError::IoError)
+                        })
+                        .collect::<Result<Vec<SearchDirectory>, TmsError>>()?,
+                ),
                 None => config.search_dirs,
             };
 
