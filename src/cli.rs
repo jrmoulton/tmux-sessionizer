@@ -88,7 +88,10 @@ pub(crate) fn create_app() -> ArgMatches {
 
 pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGiven, TmsError> {
     // Get the configuration from the config file
-    let config = confy::load::<Config>("tms", None).change_context(TmsError::ConfigError)?;
+    let mut config = confy::load::<Config>("tms", None)
+        .change_context(ConfigError::LoadError)
+        .attach_printable("Failed to load the config file")
+        .change_context(TmsError::ConfigError)?;
     match cli_args.subcommand() {
         Some(("start", _sub_cmd_matches)) => {
             if let Some(sessions) = config.sessions {
@@ -178,14 +181,11 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
         }
         // Handle the config subcommand
         Some(("config", sub_cmd_matches)) => {
-            let mut defaults =
-                confy::load::<Config>("tms", None).change_context(TmsError::ConfigError)?;
-
             let max_depths = match sub_cmd_matches.get_many::<usize>("max depth") {
                 Some(depths) => depths.collect::<Vec<_>>(),
                 None => Vec::new(),
             };
-            defaults.search_dirs = match sub_cmd_matches.get_many::<String>("search paths") {
+            config.search_dirs = match sub_cmd_matches.get_many::<String>("search paths") {
                 Some(paths) => paths
                     .into_iter()
                     .zip(max_depths.into_iter().chain(std::iter::repeat(&10)))
@@ -209,50 +209,50 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                             .change_context(TmsError::IoError)
                     })
                     .collect::<Result<Vec<SearchDirectory>, TmsError>>()?,
-                None => defaults.search_dirs,
+                None => config.search_dirs,
             };
 
             if let Some(default_session) = sub_cmd_matches
                 .get_one::<String>("default session")
                 .map(|val| val.replace('.', "_"))
             {
-                defaults.default_session = Some(default_session);
+                config.default_session = Some(default_session);
             }
 
             if let Some(display) = sub_cmd_matches.get_one::<bool>("display full path") {
-                defaults.display_full_path = Some(display.to_owned());
+                config.display_full_path = Some(display.to_owned());
             }
 
             if let Some(submodules) = sub_cmd_matches.get_one::<bool>("search submodules") {
-                defaults.search_submodules = Some(submodules.to_owned());
+                config.search_submodules = Some(submodules.to_owned());
             }
 
             if let Some(dirs) = sub_cmd_matches.get_many::<String>("excluded dirs") {
-                let current_excluded = defaults.excluded_dirs;
+                let current_excluded = config.excluded_dirs;
                 match current_excluded {
                     Some(mut excl_dirs) => {
                         excl_dirs.extend(dirs.into_iter().map(|str| str.to_string()));
-                        defaults.excluded_dirs = Some(excl_dirs)
+                        config.excluded_dirs = Some(excl_dirs)
                     }
                     None => {
-                        defaults.excluded_dirs =
+                        config.excluded_dirs =
                             Some(dirs.into_iter().map(|str| str.to_string()).collect());
                     }
                 }
             }
             if let Some(dirs) = sub_cmd_matches.get_one::<String>("remove dir") {
-                let current_excluded = defaults.excluded_dirs;
+                let current_excluded = config.excluded_dirs;
                 match current_excluded {
                     Some(mut excl_dirs) => {
                         dirs.split(' ')
                             .for_each(|dir| excl_dirs.retain(|x| x != dir));
-                        defaults.excluded_dirs = Some(excl_dirs);
+                        config.excluded_dirs = Some(excl_dirs);
                     }
                     None => todo!(),
                 }
             }
 
-            confy::store("tms", None, defaults)
+            confy::store("tms", None, config)
                 .change_context(ConfigError::WriteFailure)
                 .attach_printable("Failed to write the config file")
                 .change_context(TmsError::ConfigError)?;
@@ -262,10 +262,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
 
         // The kill subcommand will kill the current session and switch to another one
         Some(("kill", _)) => {
-            let defaults = confy::load::<Config>("tms", None)
-                .change_context(ConfigError::LoadError)
-                .attach_printable("Failed to load the config file")
-                .change_context(TmsError::ConfigError)?;
             let mut current_session =
                 String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
                     .expect("The tmux command static string should always be valid utf-9");
@@ -276,11 +272,11 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                     .expect("The tmux command static string should always be valid utf-9");
             let sessions: Vec<&str> = sessions.lines().collect();
 
-            let to_session = if defaults.default_session.is_some()
-                && sessions.contains(&defaults.default_session.as_deref().unwrap())
-                && current_session != defaults.default_session.as_deref().unwrap()
+            let to_session = if config.default_session.is_some()
+                && sessions.contains(&config.default_session.as_deref().unwrap())
+                && current_session != config.default_session.as_deref().unwrap()
             {
-                defaults.default_session.as_deref().unwrap()
+                config.default_session.as_deref().unwrap()
             } else if current_session != sessions[0] {
                 sessions[0]
             } else {
