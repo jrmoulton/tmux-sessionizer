@@ -251,17 +251,8 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                     None => todo!(),
                 }
             }
-            let config = Config {
-                search_paths: defaults.search_paths,
-                search_dirs: defaults.search_dirs,
-                excluded_dirs: defaults.excluded_dirs,
-                default_session: defaults.default_session,
-                display_full_path: defaults.display_full_path,
-                search_submodules: defaults.search_submodules,
-                sessions: defaults.sessions,
-            };
 
-            confy::store("tms", None, config)
+            confy::store("tms", None, defaults)
                 .change_context(ConfigError::WriteFailure)
                 .attach_printable("Failed to write the config file")
                 .change_context(TmsError::ConfigError)?;
