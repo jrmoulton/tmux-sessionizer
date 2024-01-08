@@ -182,7 +182,7 @@ fn get_single_selection(list: String, preview: Option<&str>) -> Result<String, T
         .multi(false)
         .color(Some("dark"))
         .build()
-        .map_err(TmsError::FuzzyFindError)?;
+        .map_err(|e| TmsError::FuzzyFindError(e.to_string()))?;
     let item_reader = SkimItemReader::default();
     let item = item_reader.of_bufread(Cursor::new(list));
     let skim_output = Skim::run_with(&options, Some(item))

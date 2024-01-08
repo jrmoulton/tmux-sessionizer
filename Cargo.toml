@@ -20,7 +20,7 @@ exclude = [
 [dependencies]
 git2 = "0.18.1"
 clap = { version = "4.4.6", features = ["cargo"] }
-skim = "0.9.4"
+skim = "0.10.4"
 confy = "0.5.1"
 serde_derive = "1.0"
 serde = "1.0"
