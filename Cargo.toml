@@ -11,16 +11,13 @@ this tool opens all checked out worktrees as new windows.
 """
 homepage = "https://github.com/jrmoulton/tmux-sessionizer"
 repository = "https://github.com/jrmoulton/tmux-sessionizer"
-exclude = [
-    "images/*"
-]
+exclude = ["images/*"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 git2 = "0.18.1"
 clap = { version = "4.4.6", features = ["cargo"] }
-skim = "0.10.4"
 serde_derive = "1.0"
 serde = "1.0"
 error-stack = "0.4.1"
@@ -30,6 +27,9 @@ aho-corasick = "1.0.1"
 config = "0.13.4"
 toml = "0.8.8"
 dirs = "5.0.1"
+nucleo = "0.3.0"
+ratatui = "0.25.0"
+crossterm = "0.27.0"
 
 [[bin]]
 name = "tms"

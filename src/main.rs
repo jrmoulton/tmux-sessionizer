@@ -1,6 +1,7 @@
 mod cli;
 mod configs;
 mod dirty_paths;
+mod picker;
 mod repos;
 
 use crate::{
@@ -13,16 +14,14 @@ use configs::SearchDirectory;
 use error_stack::{Report, Result, ResultExt};
 use git2::{Repository, Submodule};
 
+use picker::Picker;
 use repos::RepoContainer;
-use skim::prelude::*;
 use std::fs::canonicalize;
 use std::{
     collections::{HashMap, VecDeque},
     error::Error,
     fmt::Display,
-    fs,
-    io::Cursor,
-    process,
+    fs, process,
 };
 
 fn main() -> Result<(), TmsError> {
@@ -76,7 +75,13 @@ fn main() -> Result<(), TmsError> {
         config.display_full_path,
         config.search_submodules,
     )?;
-    let repo_name = get_single_selection(repos.repo_string(), None)?;
+
+    let repo_name = if let Some(str) = get_single_selection(&repos.list(), None)? {
+        str
+    } else {
+        return Ok(());
+    };
+
     let found_repo = repos
         .find_repo(&repo_name)
         .expect("The internal representation of the selected repository should be present");
@@ -175,28 +180,13 @@ pub fn execute_tmux_command(command: &str) -> process::Output {
         .unwrap_or_else(|_| panic!("Failed to execute the tmux command `{command}`"))
 }
 
-fn get_single_selection(list: String, preview: Option<&str>) -> Result<String, TmsError> {
-    let options = SkimOptionsBuilder::default()
-        .height(Some("50%"))
-        .preview(preview)
-        .multi(false)
-        .color(Some("dark"))
-        .build()
-        .map_err(|e| TmsError::FuzzyFindError(e.to_string()))?;
-    let item_reader = SkimItemReader::default();
-    let item = item_reader.of_bufread(Cursor::new(list));
-    let skim_output = Skim::run_with(&options, Some(item))
-        .ok_or_else(|| TmsError::FuzzyFindError("Fuzzy finder internal errors".into()))?;
-    if skim_output.is_abort {
-        return Err(Report::new(TmsError::CliError).attach_printable("No selection made"));
-    }
-    Ok(skim_output
-        .selected_items
-        .first()
-        .ok_or(TmsError::CliError)
-        .attach_printable("No selection made")?
-        .output()
-        .to_string())
+fn get_single_selection(
+    list: &[String],
+    preview_command: Option<String>,
+) -> Result<Option<String>, TmsError> {
+    let mut picker = Picker::new(list, preview_command);
+
+    Ok(picker.run()?)
 }
 
 fn find_repos(
@@ -303,22 +293,20 @@ impl Display for Suggestion {
 
 #[derive(Debug)]
 pub(crate) enum TmsError {
-    CliError,
     GitError,
     NonUtf8Path,
-    FuzzyFindError(String),
+    TuiError(String),
     IoError,
     ConfigError,
 }
 impl Display for TmsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::CliError => write!(f, "Cli Error"),
             Self::ConfigError => write!(f, "Config Error"),
             Self::GitError => write!(f, "Git Error"),
             Self::NonUtf8Path => write!(f, "Non Utf-8 Path"),
             Self::IoError => write!(f, "IO Error"),
-            Self::FuzzyFindError(inner) => write!(f, "Error with fuzzy finder {inner}"),
+            Self::TuiError(inner) => write!(f, "TUI error: {inner}"),
         }
     }
 }
