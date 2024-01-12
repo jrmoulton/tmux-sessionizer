@@ -45,14 +45,26 @@ impl Config {
             }
             Err(e) => match e {
                 env::VarError::NotPresent => {
-                    let mut path = home::home_dir()
-                        .ok_or(ConfigError::LoadError)
-                        .attach_printable("Could not locate home directory")
-                        .attach(Suggestion(
-                            "Try specifying a config file with the TMS_CONFIG_FILE environment variable.",
-                        ))?;
-                    path.push(".config/tms/config.toml");
-                    config::Config::builder().add_source(config::File::from(path).required(false))
+                    let mut builder = config::Config::builder();
+                    let mut config_found = false; // Stores whether a valid config file was found
+                    if let Some(home_path) = dirs::home_dir() {
+                        config_found = true;
+                        let path = home_path.as_path().join(".config/tms/config.toml");
+                        env::set_var("TMS_CONFIG_FILE", &path);
+                        builder = builder.add_source(config::File::from(path).required(false));
+                    }
+                    if let Some(config_path) = dirs::config_dir() {
+                        config_found = true;
+                        let path = config_path.as_path().join("tms/config.toml");
+                        env::set_var("TMS_CONFIG_FILE", &path);
+                        builder = builder.add_source(config::File::from(path).required(false));
+                    }
+                    if !config_found {
+                        return Err(ConfigError::LoadError)
+                            .attach_printable("Could not find a valid location for config file (both home and config dirs cannot be found)")
+                            .attach(Suggestion("Try specifying a config file with the TMS_CONFIG_FILE environment variable."));
+                    }
+                    builder
                 }
                 env::VarError::NotUnicode(_) => {
                     return Err(ConfigError::LoadError).attach_printable(
