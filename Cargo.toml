@@ -30,7 +30,6 @@ aho-corasick = "1.0.1"
 config = "0.13.4"
 toml = "0.8.8"
 dirs = "5.0.1"
-home = "0.5.9"
 
 [[bin]]
 name = "tms"
