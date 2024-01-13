@@ -83,6 +83,15 @@ Options:
   -h, --help                         Print help
 
 ```
+#### Config file location
+
+By default, tms looks for a configuration in the platform-specific config directory:
+```
+Linux: /home/alice/.config/tms/config.toml
+macOS: /Users/Alice/Library/Application Support/tms/config.toml
+Windows: C:\Users\Alice\AppData\Roaming\tms\config.toml
+```
+If the config directory can't be found, it will also check `~/.config/tms/config.toml` (only relevant on Windows and macOS). Alternatively, you can specify a custom config location by setting the `TMS_CONFIG_FILE` environment variable in your shell profile with your desired config path.
 
 ## Installation
 
