@@ -21,13 +21,15 @@ exclude = [
 git2 = "0.18.1"
 clap = { version = "4.4.6", features = ["cargo"] }
 skim = "0.10.4"
-confy = "0.5.1"
 serde_derive = "1.0"
 serde = "1.0"
 error-stack = "0.4.1"
 owo-colors = "4.0.0"
 shellexpand = "3.1.0"
 aho-corasick = "1.0.1"
+config = "0.13.4"
+toml = "0.8.8"
+dirs = "5.0.1"
 
 [[bin]]
 name = "tms"

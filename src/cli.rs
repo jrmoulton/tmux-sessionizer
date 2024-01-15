@@ -1,8 +1,8 @@
 use std::fs::canonicalize;
 
 use crate::{
-    configs::Config, configs::SearchDirectory, execute_tmux_command, get_single_selection,
-    ConfigError, TmsError,
+    configs::{Config, SearchDirectory},
+    execute_tmux_command, get_single_selection, TmsError,
 };
 use clap::{Arg, ArgMatches, Command};
 use error_stack::{Result, ResultExt};
@@ -88,10 +88,7 @@ pub(crate) fn create_app() -> ArgMatches {
 
 pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGiven, TmsError> {
     // Get the configuration from the config file
-    let mut config = confy::load::<Config>("tms", None)
-        .change_context(ConfigError::LoadError)
-        .attach_printable("Failed to load the config file")
-        .change_context(TmsError::ConfigError)?;
+    let mut config = Config::new().change_context(TmsError::ConfigError)?;
     match cli_args.subcommand() {
         Some(("start", _sub_cmd_matches)) => {
             if let Some(sessions) = config.sessions {
@@ -254,10 +251,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 }
             }
 
-            confy::store("tms", None, config)
-                .change_context(ConfigError::WriteFailure)
-                .attach_printable("Failed to write the config file")
-                .change_context(TmsError::ConfigError)?;
+            config.save().change_context(TmsError::ConfigError)?;
             println!("Configuration has been stored");
             Ok(SubCommandGiven::Yes)
         }
