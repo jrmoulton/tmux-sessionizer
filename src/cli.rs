@@ -136,43 +136,54 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
         }
 
         Some(("switch", _sub_cmd_matches)) => {
-            let mut sessions = String::from_utf8(
+            let sessions = String::from_utf8(
                 execute_tmux_command(
                     "tmux list-sessions -F '#{?session_attached,,#{session_name}}",
                 )
                 .stdout,
             )
             .unwrap();
-            sessions = sessions
+            let sessions: Vec<String> = sessions
                 .replace('\'', "")
                 .replace("\n\n", "\n")
                 .trim()
-                .to_string();
-            let target_session = get_single_selection(sessions, Some("tmux capture-pane -ept {}"))?;
-            execute_tmux_command(&format!(
-                "tmux switch-client -t {}",
-                target_session.replace('.', "_")
-            ));
+                .split('\n')
+                .map(|s| s.to_string())
+                .collect();
+
+            if let Some(target_session) =
+                get_single_selection(&sessions, Some("tmux capture-pane -ept {}".to_string()))?
+            {
+                execute_tmux_command(&format!(
+                    "tmux switch-client -t {}",
+                    target_session.replace('.', "_")
+                ));
+            }
 
             Ok(SubCommandGiven::Yes)
         }
 
         Some(("windows", _sub_cmd_matches)) => {
-            let mut windows = String::from_utf8(
+            let windows = String::from_utf8(
                 execute_tmux_command("tmux list-windows -F '#{?window_attached,,#{window_name}}")
                     .stdout,
             )
             .unwrap();
-            windows = windows
+            let windows: Vec<String> = windows
                 .replace('\'', "")
                 .replace("\n\n", "\n")
                 .trim()
-                .to_string();
-            let target_window = get_single_selection(windows, Some("tmux capture-pane -ept {}"))?;
-            execute_tmux_command(&format!(
-                "tmux select-window -t {}",
-                target_window.replace('.', "_")
-            ));
+                .split('\n')
+                .map(|s| s.to_string())
+                .collect();
+            if let Some(target_window) =
+                get_single_selection(&windows, Some("tmux capture-pane -ept {}".to_string()))?
+            {
+                execute_tmux_command(&format!(
+                    "tmux select-window -t {}",
+                    target_window.replace('.', "_")
+                ));
+            }
 
             Ok(SubCommandGiven::Yes)
         }

@@ -5,6 +5,7 @@ pub trait RepoContainer {
     fn repo_string(&self) -> String;
     fn find_repo(&self, name: &str) -> Option<&Repository>;
     fn insert_repo(&mut self, name: String, repo: Repository);
+    fn list(&self) -> Vec<String>;
 }
 
 impl RepoContainer for HashMap<String, Repository> {
@@ -22,5 +23,9 @@ impl RepoContainer for HashMap<String, Repository> {
 
     fn insert_repo(&mut self, name: String, repo: Repository) {
         self.insert(name, repo);
+    }
+
+    fn list(&self) -> Vec<String> {
+        self.keys().map(|s| s.to_owned()).collect()
     }
 }
