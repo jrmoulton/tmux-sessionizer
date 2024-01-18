@@ -282,12 +282,8 @@ fn find_submodules(
 pub struct Suggestion(&'static str);
 impl Display for Suggestion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use owo_colors::OwoColorize;
-        f.write_str(
-            &OwoColorize::bold(&format!("Suggestion: {}", self.0))
-                .green()
-                .to_string(),
-        )
+        use crossterm::style::Stylize;
+        f.write_str(&format!("Suggestion: {}", self.0).green().bold().to_string())
     }
 }
 
