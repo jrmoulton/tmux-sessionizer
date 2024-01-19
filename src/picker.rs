@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     style::Colored,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -89,6 +89,9 @@ impl Picker {
                 if key.kind == KeyEventKind::Press {
                     match key.code {
                         KeyCode::Esc => return Ok(None),
+                        KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
+                            return Ok(None)
+                        }
                         KeyCode::Enter => {
                             if let Some(index) = self.selection.selected() {
                                 return Ok(self
