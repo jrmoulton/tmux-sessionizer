@@ -384,7 +384,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 let new_path = old_path.replace(&current_session, new_session_name);
 
                 let change_dir_cmd = format!("cd {new_path}");
-                println!("{change_dir_cmd}\n");
                 execute_tmux_command(&format!("tmux send-keys -t {} \"{}\" Enter", pane_index, change_dir_cmd));
             }
 
