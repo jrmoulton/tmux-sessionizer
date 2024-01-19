@@ -93,12 +93,13 @@ impl Picker {
                             return Ok(None)
                         }
                         KeyCode::Enter => {
-                            if let Some(index) = self.selection.selected() {
-                                return Ok(self
-                                    .matcher
-                                    .snapshot()
-                                    .get_matched_item(index as u32)
-                                    .map(|item| item.data.to_owned()));
+                            if let Some(selected) = self.get_selected() {
+                                return Ok(Some(selected));
+                            }
+                        }
+                        KeyCode::Char('j') if key.modifiers == KeyModifiers::CONTROL => {
+                            if let Some(selected) = self.get_selected() {
+                                return Ok(Some(selected));
                             }
                         }
                         KeyCode::Up => self.move_up(),
@@ -208,6 +209,18 @@ impl Picker {
                 .wrap(Wrap { trim: false });
             f.render_widget(preview, horizontal_split[1]);
         }
+    }
+
+    fn get_selected(&self) -> Option<String> {
+        if let Some(index) = self.selection.selected() {
+            return self
+                .matcher
+                .snapshot()
+                .get_matched_item(index as u32)
+                .map(|item| item.data.to_owned());
+        }
+
+        None
     }
 
     fn move_up(&mut self) {
