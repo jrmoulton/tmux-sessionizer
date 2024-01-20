@@ -74,13 +74,24 @@ Configure the defaults for search paths and excluded directories
 Usage: tms config [OPTIONS]
 
 Options:
-  -p, --paths <search paths>...      The paths to search through. Shell like expansions such as `~` are supported
-  -s, --session <default session>    The default session to switch to (if avaliable) when killing another session
-      --excluded <excluded dirs>...  As many directory names as desired to not be searched over
-      --remove <remove dir>...       As many directory names to be removed from the exclusion list
-      --full-path <true> <false>     Use the full path when displaying directories [possible values: true, false]
-      --search-submodules <true> <false> Also show initialized submodules [possible values: true, false]
-  -h, --help                         Print help
+  -p, --paths <search paths>...
+          The paths to search through. Shell like expansions such as `~` are supported
+  -s, --session <default session>
+          The default session to switch to (if available) when killing another session
+      --excluded <excluded dirs>...
+          As many directory names as desired to not be searched over
+      --remove <remove dir>...
+          As many directory names to be removed from the exclusion list
+      --full-path <true | false>
+          Use the full path when displaying directories [possible values: true, false]
+      --search-submodules <true | false>
+          Also show initialized submodules [possible values: true, false]
+      --recursive-submodules <true | false>
+          Search submodules for submodules [possible values: true, false]
+  -d, --max-depth <max depth>...
+          The maximum depth to traverse when searching for repositories in the search paths, length should match the number of search paths if specified (defaults to 10)
+  -h, --help
+          Print help
 
 ```
 #### Config file location

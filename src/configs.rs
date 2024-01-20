@@ -31,6 +31,7 @@ pub struct Config {
     pub default_session: Option<String>,
     pub display_full_path: Option<bool>,
     pub search_submodules: Option<bool>,
+    pub recursive_submodules: Option<bool>,
     pub excluded_dirs: Option<Vec<String>>,
     pub search_paths: Option<Vec<String>>, // old format, deprecated
     pub search_dirs: Option<Vec<SearchDirectory>>,

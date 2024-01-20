@@ -74,6 +74,7 @@ fn main() -> Result<(), TmsError> {
         config.excluded_dirs,
         config.display_full_path,
         config.search_submodules,
+        config.recursive_submodules,
     )?;
 
     let repo_name = if let Some(str) = get_single_selection(&repos.list(), None)? {
@@ -194,6 +195,7 @@ fn find_repos(
     excluded_dirs: Option<Vec<String>>,
     display_full_path: Option<bool>,
     search_submodules: Option<bool>,
+    recursive_submodules: Option<bool>,
 ) -> Result<impl RepoContainer, TmsError> {
     let mut repos = HashMap::new();
     let mut to_search = VecDeque::new();
@@ -232,7 +234,13 @@ fn find_repos(
             };
             if search_submodules == Some(true) {
                 if let Ok(submodules) = repo.submodules() {
-                    find_submodules(submodules, &name, &mut repos, display_full_path)?;
+                    find_submodules(
+                        submodules,
+                        &name,
+                        &mut repos,
+                        display_full_path,
+                        recursive_submodules,
+                    )?;
                 }
             }
             repos.insert_repo(name, repo);
@@ -253,6 +261,7 @@ fn find_submodules(
     parent_name: &String,
     repos: &mut impl RepoContainer,
     display_full_path: Option<bool>,
+    recursive: Option<bool>,
 ) -> Result<(), TmsError> {
     for submodule in submodules.iter() {
         let repo = match submodule.open() {
@@ -272,8 +281,11 @@ fn find_submodules(
         } else {
             format!("{}>{}", parent_name, submodule_file_name)
         };
-        if let Ok(submodules) = repo.submodules() {
-            find_submodules(submodules, &name, repos, display_full_path)?;
+
+        if recursive == Some(true) {
+            if let Ok(submodules) = repo.submodules() {
+                find_submodules(submodules, &name, repos, display_full_path, recursive)?;
+            }
         }
         repos.insert_repo(name, repo);
     }
