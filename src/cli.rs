@@ -65,6 +65,15 @@ pub(crate) fn create_app() -> ArgMatches {
                         .help("Also show initialized submodules")
                 )
                 .arg(
+                    Arg::new("recursive submodules")
+                        .required(false)
+                        .num_args(1)
+                        .value_name("true | false")
+                        .value_parser(clap::value_parser!(bool))
+                        .long("recursive-submodules")
+                        .help("Search submodules for submodules")
+                )
+                .arg(
                     Arg::new("max depth")
                         .required(false)
                         .num_args(1..)
@@ -235,6 +244,10 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
 
             if let Some(submodules) = sub_cmd_matches.get_one::<bool>("search submodules") {
                 config.search_submodules = Some(submodules.to_owned());
+            }
+
+            if let Some(submodules) = sub_cmd_matches.get_one::<bool>("recursive submodules") {
+                config.recursive_submodules = Some(submodules.to_owned());
             }
 
             if let Some(dirs) = sub_cmd_matches.get_many::<String>("excluded dirs") {
