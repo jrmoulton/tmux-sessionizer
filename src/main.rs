@@ -230,8 +230,10 @@ fn find_repos(
             } else {
                 file_name
             };
-            if let (Some(true), Ok(submodules)) = (search_submodules, repo.submodules()) {
-                find_submodules(submodules, &name, &mut repos, display_full_path)?;
+            if search_submodules == Some(true) {
+                if let Ok(submodules) = repo.submodules() {
+                    find_submodules(submodules, &name, &mut repos, display_full_path)?;
+                }
             }
             repos.insert_repo(name, repo);
         } else if file.path.is_dir() && file.depth > 0 {
