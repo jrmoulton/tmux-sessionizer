@@ -1,8 +1,8 @@
-use std::fs::canonicalize;
+use std::{collections::HashMap, fs::canonicalize};
 
 use crate::{
-    configs::{Config, SearchDirectory},
-    execute_tmux_command, get_single_selection, TmsError,
+    configs::Config, configs::SearchDirectory, execute_command, execute_tmux_command,
+    get_single_selection, TmsError,
 };
 use clap::{Arg, ArgMatches, Command};
 use error_stack::{Result, ResultExt};
@@ -91,6 +91,15 @@ pub(crate) fn create_app() -> ArgMatches {
         )
         .subcommand(Command::new("sessions")
             .about("Show running tmux sessions with asterisk on the current session")
+        )
+        .subcommand(Command::new("rename")
+            .arg_required_else_help(true)
+            .about("Rename the active session and the working directory")
+            .arg(
+                Arg::new("name")
+                .required(true)
+                .help("The new session's name")
+            )
         )
         .get_matches()
 }
@@ -333,6 +342,66 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             println!("{new_string}");
             std::thread::sleep(std::time::Duration::from_millis(100));
             execute_tmux_command("tmux refresh-client -S");
+            Ok(SubCommandGiven::Yes)
+        }
+
+        // Rename the active session and the working directory
+        // rename
+        Some(("rename", sub_cmd_matches)) => {
+            let new_session_name = sub_cmd_matches.get_one::<String>("name").unwrap();
+
+            let raw_current_session =
+                String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
+                    .unwrap();
+
+            let current_session = raw_current_session.trim();
+            let panes = String::from_utf8(
+                execute_tmux_command("tmux list-panes -s -F '#{window_index}.#{pane_index},#{pane_current_command},#{pane_current_path}'")
+                    .stdout,
+            )
+            .unwrap();
+
+            let mut paneid_to_pane_deatils: HashMap<String, HashMap<String, String>> =
+                HashMap::new();
+            let all_panes: Vec<String> = panes
+                .trim()
+                .split("\n")
+                .map(|window| {
+                    let mut _window: Vec<&str> = window.split(',').collect();
+
+                    let pane_index = _window[0];
+                    let pane_details: HashMap<String, String> = HashMap::from([
+                        (String::from("command"), _window[1].to_string()),
+                        (String::from("cwd"), _window[2].to_string()),
+                    ]);
+
+                    paneid_to_pane_deatils.insert(pane_index.to_string(), pane_details);
+
+                    _window[0].to_string()
+                })
+                .collect();
+
+            let first_pane_details = &paneid_to_pane_deatils[all_panes.first().unwrap()];
+
+            let new_session_path: String = String::from(&first_pane_details["cwd"])
+                .replace(&current_session, new_session_name);
+
+            let move_command_args: Vec<String> =
+                [first_pane_details["cwd"].clone(), new_session_path.clone()].to_vec();
+            execute_command("mv", move_command_args);
+
+            for pane_index in all_panes.iter() {
+                let pane_details = &paneid_to_pane_deatils[pane_index];
+
+                let old_path = &pane_details["cwd"];
+                let new_path = old_path.replace(&current_session, new_session_name);
+
+                let change_dir_cmd = format!("cd {new_path}");
+                execute_tmux_command(&format!("tmux send-keys -t {} \"{}\" Enter", pane_index, change_dir_cmd));
+            }
+
+            execute_tmux_command(&format!("tmux rename-session {}", new_session_name));
+            execute_tmux_command(&format!("tmux attach -c {}", new_session_path));
             Ok(SubCommandGiven::Yes)
         }
         _ => Ok(SubCommandGiven::No(config)),

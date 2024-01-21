@@ -43,6 +43,17 @@ Similar to `tms switch`, you can show other active windows in the current sessio
 finder and a preview window. A config for use with `display-popup`, could look like this 
 `bind C-w display-popup -E "tms windows"`.
 
+
+### The `tms rename` command
+
+Using this command you can automatically rename the active session along with the directory name
+and the active directory inside all the panes in the active session will be changed to the renamed
+directory
+
+`tms rename <new_session_name>`
+
+`bind C-w command-prompt -p "Rename active session to: " "run-shell 'tms rename %1'"`.
+
 ### CLI overview
 
 Use `tms --help`
@@ -59,6 +70,7 @@ Commands:
   windows   Display the current session's windows with a fuzzy finder and a preview window
   kill      Kill the current tmux session and jump to another
   sessions  Show running tmux sessions with asterisk on the current session
+  rename    Rename the active session and the working directory
   help      Print this message or the help of the given subcommand(s)
 
 Options:
