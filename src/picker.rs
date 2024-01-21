@@ -103,7 +103,13 @@ impl Picker {
                             }
                         }
                         KeyCode::Up => self.move_up(),
+                        KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.move_up()
+                        }
                         KeyCode::Down => self.move_down(),
+                        KeyCode::Char('n') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.move_down()
+                        }
                         KeyCode::Left => self.move_cursor_left(),
                         KeyCode::Right => self.move_cursor_right(),
                         KeyCode::Char(c) => self.update_filter(c),
