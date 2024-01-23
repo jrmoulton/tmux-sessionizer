@@ -181,18 +181,12 @@ pub fn execute_command(command: &str, args: Vec<String>) -> process::Output {
 }
 
 pub fn execute_tmux_command(command: &str) -> process::Output {
-    let args: Vec<String> = match shell_words::split(command) {
-        Ok(splitted_args) => {
-            let mut _args = splitted_args;
-            _args.remove(0);
-
-            _args
-        }
-
-        Err(_) => panic!("Failed to parse arguments"),
-    };
-    
-    execute_command("tmux", args)
+    let args: Vec<&str> = command.split(' ').skip(1).collect();
+    process::Command::new("tmux")
+        .args(args)
+        .stdin(process::Stdio::inherit())
+        .output()
+        .unwrap_or_else(|_| panic!("Failed to execute the tmux command `{command}`"))
 }
 
 fn get_single_selection(
