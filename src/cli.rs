@@ -156,7 +156,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
         Some(("switch", _sub_cmd_matches)) => {
             let sessions = String::from_utf8(
                 execute_tmux_command(
-                    "tmux list-sessions -F '#{?session_attached,,#{session_name}}'",
+                    "tmux list-sessions -F '#{?session_attached,,#{session_name}}",
                 )
                 .stdout,
             )
@@ -183,7 +183,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
 
         Some(("windows", _sub_cmd_matches)) => {
             let windows = String::from_utf8(
-                execute_tmux_command("tmux list-windows -F '#{?window_attached,,#{window_name}}'")
+                execute_tmux_command("tmux list-windows -F '#{?window_attached,,#{window_name}}")
                     .stdout,
             )
             .unwrap();
@@ -297,7 +297,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             current_session.retain(|x| x != '\'' && x != '\n');
 
             let sessions =
-                String::from_utf8(execute_tmux_command("tmux list-sessions -F '#S'").stdout)
+                String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
                     .expect("The tmux command static string should always be valid utf-9");
             let sessions: Vec<&str> = sessions.lines().collect();
 
@@ -325,7 +325,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             current_session.retain(|x| x != '\'' && x != '\n');
             let current_session_star = format!("{current_session}*");
             let sessions =
-                String::from_utf8(execute_tmux_command("tmux list-sessions -F '#S'").stdout)
+                String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
                     .expect("The tmux command static string should always be valid utf-9")
                     .split('\n')
                     .map(String::from)
