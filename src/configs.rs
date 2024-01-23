@@ -51,13 +51,11 @@ impl Config {
                     if let Some(home_path) = dirs::home_dir() {
                         config_found = true;
                         let path = home_path.as_path().join(".config/tms/config.toml");
-                        env::set_var("TMS_CONFIG_FILE", &path);
                         builder = builder.add_source(config::File::from(path).required(false));
                     }
                     if let Some(config_path) = dirs::config_dir() {
                         config_found = true;
                         let path = config_path.as_path().join("tms/config.toml");
-                        env::set_var("TMS_CONFIG_FILE", &path);
                         builder = builder.add_source(config::File::from(path).required(false));
                     }
                     if !config_found {
