@@ -1,6 +1,11 @@
-use crate::{configs::Config, execute_tmux_command, get_single_selection, ConfigError, TmsError};
+use std::{collections::HashMap, fs::canonicalize};
+
+use crate::{
+    configs::Config, configs::SearchDirectory, execute_command, execute_tmux_command,
+    get_single_selection, TmsError,
+};
 use clap::{Arg, ArgMatches, Command};
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{Result, ResultExt};
 
 pub(crate) fn create_app() -> ArgMatches {
     Command::new("tms")
@@ -25,7 +30,7 @@ pub(crate) fn create_app() -> ArgMatches {
                         .long("session")
                         .required(false)
                         .num_args(1)
-                        .help("The default session to switch to (if avaliable) when killing another session")
+                        .help("The default session to switch to (if available) when killing another session")
                 )
                 .arg(
                     Arg::new("excluded dirs")
@@ -45,28 +50,63 @@ pub(crate) fn create_app() -> ArgMatches {
                     Arg::new("display full path")
                         .required(false)
                         .num_args(1)
-                        .value_names(["true", "false"])
+                        .value_name("true | false")
                         .value_parser(clap::value_parser!(bool))
                         .long("full-path")
                         .help("Use the full path when displaying directories")
                 )
+                .arg(
+                    Arg::new("search submodules")
+                        .required(false)
+                        .num_args(1)
+                        .value_name("true | false")
+                        .value_parser(clap::value_parser!(bool))
+                        .long("search-submodules")
+                        .help("Also show initialized submodules")
+                )
+                .arg(
+                    Arg::new("recursive submodules")
+                        .required(false)
+                        .num_args(1)
+                        .value_name("true | false")
+                        .value_parser(clap::value_parser!(bool))
+                        .long("recursive-submodules")
+                        .help("Search submodules for submodules")
+                )
+                .arg(
+                    Arg::new("max depth")
+                        .required(false)
+                        .num_args(1..)
+                        .value_parser(clap::value_parser!(usize))
+                        .short('d')
+                        .long("max-depth")
+                        .help("The maximum depth to traverse when searching for repositories in the search paths, length should match the number of search paths if specified (defaults to 10)")
+                )
         )
         .subcommand(Command::new("start").about("Initialize tmux with the default sessions"))
         .subcommand(Command::new("switch").about("Display other sessions with a fuzzy finder and a preview window"))
+        .subcommand(Command::new("windows").about("Display the current session's windows with a fuzzy finder and a preview window"))
         .subcommand(Command::new("kill")
             .about("Kill the current tmux session and jump to another")
         )
         .subcommand(Command::new("sessions")
             .about("Show running tmux sessions with asterisk on the current session")
         )
+        .subcommand(Command::new("rename")
+            .arg_required_else_help(true)
+            .about("Rename the active session and the working directory")
+            .arg(
+                Arg::new("name")
+                .required(true)
+                .help("The new session's name")
+            )
+        )
         .get_matches()
 }
 
 pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGiven, TmsError> {
     // Get the configuration from the config file
-    let config = confy::load::<Config>("tms", None)
-        .into_report()
-        .change_context(TmsError::ConfigError)?;
+    let mut config = Config::new().change_context(TmsError::ConfigError)?;
     match cli_args.subcommand() {
         Some(("start", _sub_cmd_matches)) => {
             if let Some(sessions) = config.sessions {
@@ -78,9 +118,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                     if let Some(session_path) = session.path {
                         sesssion_start_string.push_str(&format!(
                             " -c {}",
-                            shellexpand::full(&session_path)
-                                .into_report()
-                                .change_context(TmsError::IoError)?
+                            shellexpand::full(&session_path).change_context(TmsError::IoError)?
                         ))
                     }
                     execute_tmux_command(&sesssion_start_string);
@@ -95,7 +133,6 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                                 window_start_string.push_str(&format!(
                                     " -c {}",
                                     shellexpand::full(&window_path)
-                                        .into_report()
                                         .change_context(TmsError::IoError)?
                                 ));
                             }
@@ -117,103 +154,143 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
         }
 
         Some(("switch", _sub_cmd_matches)) => {
-            let mut sessions = String::from_utf8(
+            let sessions = String::from_utf8(
                 execute_tmux_command(
                     "tmux list-sessions -F '#{?session_attached,,#{session_name}}",
                 )
                 .stdout,
             )
             .unwrap();
-            sessions = sessions
+            let sessions: Vec<String> = sessions
                 .replace('\'', "")
                 .replace("\n\n", "\n")
                 .trim()
-                .to_string();
-            let target_session = get_single_selection(sessions, Some("tmux capture-pane -ept {}"))?;
-            execute_tmux_command(&format!(
-                "tmux switch-client -t {}",
-                target_session.replace('.', "_")
-            ));
+                .split('\n')
+                .map(|s| s.to_string())
+                .collect();
+
+            if let Some(target_session) =
+                get_single_selection(&sessions, Some("tmux capture-pane -ept {}".to_string()))?
+            {
+                execute_tmux_command(&format!(
+                    "tmux switch-client -t {}",
+                    target_session.replace('.', "_")
+                ));
+            }
+
+            Ok(SubCommandGiven::Yes)
+        }
+
+        Some(("windows", _sub_cmd_matches)) => {
+            let windows = String::from_utf8(
+                execute_tmux_command("tmux list-windows -F '#{?window_attached,,#{window_name}}")
+                    .stdout,
+            )
+            .unwrap();
+            let windows: Vec<String> = windows
+                .replace('\'', "")
+                .replace("\n\n", "\n")
+                .trim()
+                .split('\n')
+                .map(|s| s.to_string())
+                .collect();
+            if let Some(target_window) =
+                get_single_selection(&windows, Some("tmux capture-pane -ept {}".to_string()))?
+            {
+                execute_tmux_command(&format!(
+                    "tmux select-window -t {}",
+                    target_window.replace('.', "_")
+                ));
+            }
 
             Ok(SubCommandGiven::Yes)
         }
         // Handle the config subcommand
         Some(("config", sub_cmd_matches)) => {
-            let mut defaults = confy::load::<Config>("tms", None)
-                .into_report()
-                .change_context(TmsError::ConfigError)?;
-            defaults.search_paths = match sub_cmd_matches.get_many::<String>("search paths") {
-                Some(paths) => {
-                    let mut paths = paths.map(|x| x.to_string()).collect::<Vec<String>>();
-                    paths.iter_mut().for_each(|path| {
-                        *path = if path.chars().rev().next().unwrap() == '/' {
-                            let mut path = path.to_string();
-                            path.pop();
-                            path
-                        } else {
-                            path.to_owned()
-                        }
-                    });
-                    paths
-                }
-                None => defaults.search_paths,
+            let max_depths = match sub_cmd_matches.get_many::<usize>("max depth") {
+                Some(depths) => depths.collect::<Vec<_>>(),
+                None => Vec::new(),
             };
-            defaults.default_session = sub_cmd_matches
-                .get_one::<String>("default session")
-                .map(|val| val.replace('.', "_"));
+            config.search_dirs = match sub_cmd_matches.get_many::<String>("search paths") {
+                Some(paths) => Some(
+                    paths
+                        .into_iter()
+                        .zip(max_depths.into_iter().chain(std::iter::repeat(&10)))
+                        .map(|(path, depth)| {
+                            let path = if path.ends_with('/') {
+                                let mut modified_path = path.clone();
+                                modified_path.pop();
+                                modified_path
+                            } else {
+                                path.clone()
+                            };
+                            shellexpand::full(&path)
+                                .map(|val| (val.to_string(), *depth))
+                                .change_context(TmsError::IoError)
+                        })
+                        .collect::<Result<Vec<(String, usize)>, TmsError>>()?
+                        .iter()
+                        .map(|(path, depth)| {
+                            canonicalize(path)
+                                .map(|val| SearchDirectory::new(val, *depth))
+                                .change_context(TmsError::IoError)
+                        })
+                        .collect::<Result<Vec<SearchDirectory>, TmsError>>()?,
+                ),
+                None => config.search_dirs,
+            };
 
-            defaults.display_full_path = sub_cmd_matches
-                .get_one::<bool>("display full path")
-                .copied();
+            if let Some(default_session) = sub_cmd_matches
+                .get_one::<String>("default session")
+                .map(|val| val.replace('.', "_"))
+            {
+                config.default_session = Some(default_session);
+            }
+
+            if let Some(display) = sub_cmd_matches.get_one::<bool>("display full path") {
+                config.display_full_path = Some(display.to_owned());
+            }
+
+            if let Some(submodules) = sub_cmd_matches.get_one::<bool>("search submodules") {
+                config.search_submodules = Some(submodules.to_owned());
+            }
+
+            if let Some(submodules) = sub_cmd_matches.get_one::<bool>("recursive submodules") {
+                config.recursive_submodules = Some(submodules.to_owned());
+            }
 
             if let Some(dirs) = sub_cmd_matches.get_many::<String>("excluded dirs") {
-                let current_excluded = defaults.excluded_dirs;
+                let current_excluded = config.excluded_dirs;
                 match current_excluded {
                     Some(mut excl_dirs) => {
                         excl_dirs.extend(dirs.into_iter().map(|str| str.to_string()));
-                        defaults.excluded_dirs = Some(excl_dirs)
+                        config.excluded_dirs = Some(excl_dirs)
                     }
                     None => {
-                        defaults.excluded_dirs =
+                        config.excluded_dirs =
                             Some(dirs.into_iter().map(|str| str.to_string()).collect());
                     }
                 }
             }
             if let Some(dirs) = sub_cmd_matches.get_one::<String>("remove dir") {
-                let current_excluded = defaults.excluded_dirs;
+                let current_excluded = config.excluded_dirs;
                 match current_excluded {
                     Some(mut excl_dirs) => {
                         dirs.split(' ')
                             .for_each(|dir| excl_dirs.retain(|x| x != dir));
-                        defaults.excluded_dirs = Some(excl_dirs);
+                        config.excluded_dirs = Some(excl_dirs);
                     }
                     None => todo!(),
                 }
             }
-            let config = Config {
-                search_paths: defaults.search_paths,
-                excluded_dirs: defaults.excluded_dirs,
-                default_session: defaults.default_session,
-                display_full_path: defaults.display_full_path,
-                sessions: defaults.sessions,
-            };
 
-            confy::store("tms", None, config)
-                .into_report()
-                .change_context(ConfigError::WriteFailure)
-                .attach_printable("Failed to write the config file")
-                .change_context(TmsError::ConfigError)?;
+            config.save().change_context(TmsError::ConfigError)?;
             println!("Configuration has been stored");
             Ok(SubCommandGiven::Yes)
         }
 
-        // The kill subcommand will kill the current session and switch to anther one
+        // The kill subcommand will kill the current session and switch to another one
         Some(("kill", _)) => {
-            let defaults = confy::load::<Config>("tms", None)
-                .into_report()
-                .change_context(ConfigError::LoadError)
-                .attach_printable("Failed to load the config file")
-                .change_context(TmsError::ConfigError)?;
             let mut current_session =
                 String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
                     .expect("The tmux command static string should always be valid utf-9");
@@ -224,15 +301,15 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                     .expect("The tmux command static string should always be valid utf-9");
             let sessions: Vec<&str> = sessions.lines().collect();
 
-            let to_session = if defaults.default_session.is_some()
-                && sessions.contains(&defaults.default_session.clone().unwrap().as_str())
-                && current_session != defaults.default_session.clone().unwrap()
+            let to_session = if config.default_session.is_some()
+                && sessions.contains(&config.default_session.as_deref().unwrap())
+                && current_session != config.default_session.as_deref().unwrap()
             {
-                defaults.default_session.unwrap()
+                config.default_session.as_deref().unwrap()
             } else if current_session != sessions[0] {
-                sessions[0].to_string()
+                sessions[0]
             } else {
-                sessions.get(1).unwrap_or_else(|| &sessions[0]).to_string()
+                sessions.get(1).unwrap_or_else(|| &sessions[0])
             };
             execute_tmux_command(&format!("tmux switch-client -t {to_session}"));
             execute_tmux_command(&format!("tmux kill-session -t {current_session}"));
@@ -265,6 +342,66 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             println!("{new_string}");
             std::thread::sleep(std::time::Duration::from_millis(100));
             execute_tmux_command("tmux refresh-client -S");
+            Ok(SubCommandGiven::Yes)
+        }
+
+        // Rename the active session and the working directory
+        // rename
+        Some(("rename", sub_cmd_matches)) => {
+            let new_session_name = sub_cmd_matches.get_one::<String>("name").unwrap();
+
+            let raw_current_session =
+                String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
+                    .unwrap();
+
+            let current_session = raw_current_session.trim();
+            let panes = String::from_utf8(
+                execute_tmux_command("tmux list-panes -s -F '#{window_index}.#{pane_index},#{pane_current_command},#{pane_current_path}'")
+                    .stdout,
+            )
+            .unwrap();
+
+            let mut paneid_to_pane_deatils: HashMap<String, HashMap<String, String>> =
+                HashMap::new();
+            let all_panes: Vec<String> = panes
+                .trim()
+                .split("\n")
+                .map(|window| {
+                    let mut _window: Vec<&str> = window.split(',').collect();
+
+                    let pane_index = _window[0];
+                    let pane_details: HashMap<String, String> = HashMap::from([
+                        (String::from("command"), _window[1].to_string()),
+                        (String::from("cwd"), _window[2].to_string()),
+                    ]);
+
+                    paneid_to_pane_deatils.insert(pane_index.to_string(), pane_details);
+
+                    _window[0].to_string()
+                })
+                .collect();
+
+            let first_pane_details = &paneid_to_pane_deatils[all_panes.first().unwrap()];
+
+            let new_session_path: String = String::from(&first_pane_details["cwd"])
+                .replace(&current_session, new_session_name);
+
+            let move_command_args: Vec<String> =
+                [first_pane_details["cwd"].clone(), new_session_path.clone()].to_vec();
+            execute_command("mv", move_command_args);
+
+            for pane_index in all_panes.iter() {
+                let pane_details = &paneid_to_pane_deatils[pane_index];
+
+                let old_path = &pane_details["cwd"];
+                let new_path = old_path.replace(&current_session, new_session_name);
+
+                let change_dir_cmd = format!("cd {new_path}");
+                execute_tmux_command(&format!("tmux send-keys -t {} \"{}\" Enter", pane_index, change_dir_cmd));
+            }
+
+            execute_tmux_command(&format!("tmux rename-session {}", new_session_name));
+            execute_tmux_command(&format!("tmux attach -c {}", new_session_path));
             Ok(SubCommandGiven::Yes)
         }
         _ => Ok(SubCommandGiven::No(config)),

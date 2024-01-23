@@ -1,6 +1,6 @@
 [package]
 name = "tmux-sessionizer"
-version = "0.2.3"
+version = "0.3.2"
 authors = ["Jared Moulton <jaredmoulton3@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -11,27 +11,29 @@ this tool opens all checked out worktrees as new windows.
 """
 homepage = "https://github.com/jrmoulton/tmux-sessionizer"
 repository = "https://github.com/jrmoulton/tmux-sessionizer"
-exclude = [
-    "images/*"
-]
+exclude = ["images/*"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-git2 = "0.15.0"
-clap = { version = "4.0.19", features = ["cargo"] }
-skim = "0.9.4"
-confy = "0.5.1"
+git2 = "0.18.1"
+clap = { version = "4.4.6", features = ["cargo"] }
 serde_derive = "1.0"
 serde = "1.0"
-error-stack = "0.2.4"
-owo-colors = "3.5.0"
-shellexpand = "2.1.2"
+error-stack = "0.4.1"
+shellexpand = "3.1.0"
 aho-corasick = "1.0.1"
+shell-words = "1.1.0"
+config = { version = "0.13.4", default-features = false, features = ["toml"] }
+toml = "0.5"
+dirs = "5.0.1"
+nucleo = "0.3.0"
+ratatui = "0.25.0"
+crossterm = "0.27.0"
 
 [[bin]]
 name = "tms"
 path = "src/main.rs"
 
 [dev-dependencies]
-once_cell = "1.17.0"
+once_cell = "1.18.0"

@@ -11,7 +11,7 @@ are automatically opened as new windows, specific directories can be excluded, a
 be set, killing a session jumps you to a default, and it is a goal to handle more edge case
 scenarios.
 
-Tmux has keybindings built-in to allow you to switch between sessions. By default these are
+Tmux has keybindings built-in to allow you to switch between sessions. By default, these are
 `leader-(` and `leader-)`
 
 Switching between windows is done by default with `leader-p` and `leader-n`
@@ -22,7 +22,7 @@ Switching between windows is done by default with `leader-p` and `leader-n`
 
 ### The `tms` command
 
-Running `tms` will find the repos and fuzzy find on them. It is very conveneint to bind the tms
+Running `tms` will find the repos and fuzzy find on them. It is very convenient to bind the tms
 command to a tmux keybinding so that you don't have to leave your text editor to open a new project.
 I have this tmux binding `bind C-o display-popup -E "tms"`. See the image below for what this look
 like with the `tms switch` keybinding
@@ -37,6 +37,25 @@ popup is displayed (and it's fast)
 
 ![tms-switch](images/tms_switch-v2_1.png)
 
+### The `tms windows` command
+
+Similar to `tms switch`, you can show other active windows in the current session with a fuzzy
+finder and a preview window. A config for use with `display-popup`, could look like this 
+`bind C-w display-popup -E "tms windows"`.
+
+
+### The `tms rename` command
+
+Using this command you can automatically rename the active session along with the directory name
+and the active directory inside all the panes in the active session will be changed to the renamed
+directory
+
+`tms rename <new_session_name>`
+
+`bind C-w command-prompt -p "Rename active session to: " "run-shell 'tms rename %1'"`.
+
+### CLI overview
+
 Use `tms --help`
 
 ```
@@ -48,8 +67,10 @@ Commands:
   config    Configure the defaults for search paths and excluded directories
   start     Initialize tmux with the default sessions
   switch    Display other sessions with a fuzzy finder and a preview window
+  windows   Display the current session's windows with a fuzzy finder and a preview window
   kill      Kill the current tmux session and jump to another
   sessions  Show running tmux sessions with asterisk on the current session
+  rename    Rename the active session and the working directory
   help      Print this message or the help of the given subcommand(s)
 
 Options:
@@ -65,16 +86,39 @@ Configure the defaults for search paths and excluded directories
 Usage: tms config [OPTIONS]
 
 Options:
-  -p, --paths <search paths>...      The paths to search through. Shell like expansions such as `~` are supported
-  -s, --session <default session>    The default session to switch to (if avaliable) when killing another session
-      --excluded <excluded dirs>...  As many directory names as desired to not be searched over
-      --remove <remove dir>...       As many directory names to be removed from the exclusion list
-      --full-path <true> <false>     Use the full path when displaying directories [possible values: true, false]
-  -h, --help                         Print help
+  -p, --paths <search paths>...
+          The paths to search through. Shell like expansions such as `~` are supported
+  -s, --session <default session>
+          The default session to switch to (if available) when killing another session
+      --excluded <excluded dirs>...
+          As many directory names as desired to not be searched over
+      --remove <remove dir>...
+          As many directory names to be removed from the exclusion list
+      --full-path <true | false>
+          Use the full path when displaying directories [possible values: true, false]
+      --search-submodules <true | false>
+          Also show initialized submodules [possible values: true, false]
+      --recursive-submodules <true | false>
+          Search submodules for submodules [possible values: true, false]
+  -d, --max-depth <max depth>...
+          The maximum depth to traverse when searching for repositories in the search paths, length should match the number of search paths if specified (defaults to 10)
+  -h, --help
+          Print help
 
 ```
+#### Config file location
+
+By default, tms looks for a configuration in the platform-specific config directory:
+```
+Linux: /home/alice/.config/tms/config.toml
+macOS: /Users/Alice/Library/Application Support/tms/config.toml
+Windows: C:\Users\Alice\AppData\Roaming\tms\config.toml
+```
+If the config directory can't be found, it will also check `~/.config/tms/config.toml` (only relevant on Windows and macOS). Alternatively, you can specify a custom config location by setting the `TMS_CONFIG_FILE` environment variable in your shell profile with your desired config path.
 
 ## Installation
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/tmux-sessionizer.svg)](https://repology.org/project/tmux-sessionizer/versions)
 
 ### Cargo
 
