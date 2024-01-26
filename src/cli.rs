@@ -365,7 +365,7 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 HashMap::new();
             let all_panes: Vec<String> = panes
                 .trim()
-                .split("\n")
+                .split('\n')
                 .map(|window| {
                     let mut _window: Vec<&str> = window.split(',').collect();
 
@@ -383,8 +383,8 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
 
             let first_pane_details = &paneid_to_pane_deatils[all_panes.first().unwrap()];
 
-            let new_session_path: String = String::from(&first_pane_details["cwd"])
-                .replace(&current_session, new_session_name);
+            let new_session_path: String =
+                String::from(&first_pane_details["cwd"]).replace(current_session, new_session_name);
 
             let move_command_args: Vec<String> =
                 [first_pane_details["cwd"].clone(), new_session_path.clone()].to_vec();
@@ -394,10 +394,13 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 let pane_details = &paneid_to_pane_deatils[pane_index];
 
                 let old_path = &pane_details["cwd"];
-                let new_path = old_path.replace(&current_session, new_session_name);
+                let new_path = old_path.replace(current_session, new_session_name);
 
                 let change_dir_cmd = format!("cd {new_path}");
-                execute_tmux_command(&format!("tmux send-keys -t {} \"{}\" Enter", pane_index, change_dir_cmd));
+                execute_tmux_command(&format!(
+                    "tmux send-keys -t {} \"{}\" Enter",
+                    pane_index, change_dir_cmd
+                ));
             }
 
             execute_tmux_command(&format!("tmux rename-session {}", new_session_name));
