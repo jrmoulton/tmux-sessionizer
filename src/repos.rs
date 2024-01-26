@@ -26,6 +26,9 @@ impl RepoContainer for HashMap<String, Repository> {
     }
 
     fn list(&self) -> Vec<String> {
-        self.keys().map(|s| s.to_owned()).collect()
+        let mut list: Vec<String> = self.keys().map(|s| s.to_owned()).collect();
+        list.sort();
+
+        list
     }
 }
