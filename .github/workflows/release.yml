@@ -105,6 +105,12 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
     steps:
+      - uses: knicknic/os-specific-run@v1.0.3
+        with:
+          macos: brew install openssl@1.1
+          linux: |
+            sudo apt-get install libssl-dev
+          windows: choco install openssl
       - uses: actions/checkout@v4
         with:
           submodules: recursive
