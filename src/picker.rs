@@ -102,6 +102,19 @@ impl Picker {
                                 return Ok(Some(selected));
                             }
                         }
+                        KeyCode::Delete => self.delete(),
+                        KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.delete()
+                        }
+                        KeyCode::Char('w') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.delete_word()
+                        }
+                        KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.delete_to_line(false)
+                        }
+                        KeyCode::Char('k') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.delete_to_line(true)
+                        }
                         KeyCode::Up => self.move_up(),
                         KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
                             self.move_up()
@@ -109,6 +122,12 @@ impl Picker {
                         KeyCode::Down => self.move_down(),
                         KeyCode::Char('n') if key.modifiers == KeyModifiers::CONTROL => {
                             self.move_down()
+                        }
+                        KeyCode::Char('a') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.move_to_start()
+                        }
+                        KeyCode::Char('e') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.move_to_end()
                         }
                         KeyCode::Left => self.move_cursor_left(),
                         KeyCode::Right => self.move_cursor_right(),
@@ -230,7 +249,12 @@ impl Picker {
     }
 
     fn move_up(&mut self) {
-        let max = self.matcher.snapshot().matched_item_count() as usize - 1;
+        let item_count = self.matcher.snapshot().matched_item_count() as usize;
+        let max = if item_count == 0 {
+            return;
+        } else {
+            item_count - 1
+        };
         match self.selection.selected() {
             Some(i) if i >= max => {}
             Some(i) => self.selection.select(Some(i + 1)),
@@ -285,6 +309,19 @@ impl Picker {
         }
     }
 
+    fn delete(&mut self) {
+        if (self.cursor_pos as usize) == self.filter.len() {
+            return;
+        }
+
+        let prev_filter = self.filter.clone();
+        self.filter.remove(self.cursor_pos as usize);
+
+        if self.filter != prev_filter {
+            self.update_matcher_pattern(&prev_filter);
+        }
+    }
+
     fn update_matcher_pattern(&mut self, prev_filter: &str) {
         self.matcher.pattern.reparse(
             0,
@@ -293,6 +330,57 @@ impl Picker {
             Normalization::Smart,
             self.filter.starts_with(prev_filter),
         );
+    }
+
+    fn delete_word(&mut self) {
+        let mut chars = self
+            .filter
+            .chars()
+            .rev()
+            .skip(self.filter.chars().count() - self.cursor_pos as usize);
+        let length = std::cmp::min(
+            u16::try_from(
+                1 + chars.by_ref().take_while(|c| *c == ' ').count()
+                    + chars.by_ref().take_while(|c| *c != ' ').count(),
+            )
+            .unwrap_or(self.cursor_pos),
+            self.cursor_pos,
+        );
+
+        let prev_filter = self.filter.clone();
+        let new_cursor_pos = self.cursor_pos - length;
+
+        self.filter
+            .drain((new_cursor_pos as usize)..(self.cursor_pos as usize));
+
+        self.cursor_pos = new_cursor_pos;
+
+        if self.filter != prev_filter {
+            self.update_matcher_pattern(&prev_filter);
+        }
+    }
+
+    fn delete_to_line(&mut self, forward: bool) {
+        let prev_filter = self.filter.clone();
+
+        if forward {
+            self.filter.drain((self.cursor_pos as usize)..);
+        } else {
+            self.filter.drain(..(self.cursor_pos as usize));
+            self.cursor_pos = 0;
+        }
+
+        if self.filter != prev_filter {
+            self.update_matcher_pattern(&prev_filter);
+        }
+    }
+
+    fn move_to_start(&mut self) {
+        self.cursor_pos = 0;
+    }
+
+    fn move_to_end(&mut self) {
+        self.cursor_pos = u16::try_from(self.filter.len()).unwrap_or_default();
     }
 }
 
