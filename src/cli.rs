@@ -1,11 +1,12 @@
 use std::{collections::HashMap, fs::canonicalize};
 
 use crate::{
-    configs::Config, configs::SearchDirectory, execute_command, execute_tmux_command,
-    get_single_selection, TmsError,
+    configs::Config, configs::SearchDirectory, dirty_paths::DirtyUtf8Path, execute_command,
+    execute_tmux_command, get_single_selection, TmsError,
 };
 use clap::{Arg, ArgMatches, Command};
 use error_stack::{Result, ResultExt};
+use git2::Repository;
 
 pub(crate) fn create_app() -> ArgMatches {
     Command::new("tms")
@@ -99,6 +100,14 @@ pub(crate) fn create_app() -> ArgMatches {
                 Arg::new("name")
                 .required(true)
                 .help("The new session's name")
+            )
+        )
+        .subcommand(Command::new("refresh")
+            .about("Creates new worktree windows for the selected session")
+            .arg(
+                Arg::new("name")
+                .required(false)
+                .help("The session's name. If not provided gets current session")
             )
         )
         .get_matches()
@@ -405,6 +414,61 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
 
             execute_tmux_command(&format!("tmux rename-session {}", new_session_name));
             execute_tmux_command(&format!("tmux attach -c {}", new_session_path));
+            Ok(SubCommandGiven::Yes)
+        }
+        Some(("refresh", sub_cmd_matches)) => {
+            let session_name = sub_cmd_matches
+                .get_one::<String>("name")
+                .unwrap_or(
+                    &String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
+                        .unwrap(),
+                )
+                .trim()
+                .replace("'", "");
+            // For each window there should be the branch names
+            let session_path = String::from_utf8(
+                execute_tmux_command("tmux display-message -p '#{session_path}'").stdout,
+            )
+            .unwrap()
+            .trim()
+            .replace("'", "");
+            let existing_window_names: Vec<_> = String::from_utf8(
+                execute_tmux_command(&format!(
+                    "tmux list-windows -t {session_name} -F '#{{window_name}}'"
+                ))
+                .stdout,
+            )
+            .unwrap()
+            .lines()
+            .map(|line| line.replace("'", ""))
+            .collect();
+
+            if let Ok(repository) = Repository::open(session_path) {
+                if let Ok(worktrees) = repository.worktrees() {
+                    for worktree_name in worktrees.iter().filter_map(|f| f) {
+                        if existing_window_names.contains(&String::from(worktree_name)) {
+                            continue;
+                        }
+                        let path_to_tree = repository
+                            .find_worktree(worktree_name)
+                            .change_context(TmsError::GitError)?
+                            .path()
+                            .to_string()?;
+                        execute_command(
+                            "tmux",
+                            vec![
+                                String::from("new-window"),
+                                String::from("-t"),
+                                String::from(session_name.clone()),
+                                String::from("-c"),
+                                String::from(path_to_tree),
+                                String::from("-n"),
+                                String::from(worktree_name),
+                            ],
+                        );
+                    }
+                }
+            }
             Ok(SubCommandGiven::Yes)
         }
         _ => Ok(SubCommandGiven::No(config)),
