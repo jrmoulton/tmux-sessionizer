@@ -1,8 +1,9 @@
 use std::{collections::HashMap, fs::canonicalize};
 
 use crate::{
-    configs::Config, configs::SearchDirectory, execute_command, execute_tmux_command,
-    get_single_selection, TmsError,
+    configs::SearchDirectory,
+    configs::{Config, PickerColorConfig},
+    execute_command, execute_tmux_command, get_single_selection, TmsError,
 };
 use clap::{Arg, ArgMatches, Command};
 use error_stack::{Result, ResultExt};
@@ -81,6 +82,46 @@ pub(crate) fn create_app() -> ArgMatches {
                         .short('d')
                         .long("max-depth")
                         .help("The maximum depth to traverse when searching for repositories in the search paths, length should match the number of search paths if specified (defaults to 10)")
+                )
+                .arg(
+                    Arg::new("picker highlight color")
+                        .required(false)
+                        .num_args(1)
+                        .value_name("#rrggbb")
+                        .long("picker-highlight-color")
+                        .help("Background color of the highlighted item in the picker")
+                )
+                .arg(
+                    Arg::new("picker highlight text color")
+                        .required(false)
+                        .num_args(1)
+                        .value_name("#rrggbb")
+                        .long("picker-highlight-text-color")
+                        .help("Text color of the highlighted item in the picker")
+                )
+                .arg(
+                    Arg::new("picker border color")
+                        .required(false)
+                        .num_args(1)
+                        .value_name("#rrggbb")
+                        .long("picker-border-color")
+                        .help("Color of the border between widgets in the picker")
+                )
+                .arg(
+                    Arg::new("picker info color")
+                        .required(false)
+                        .num_args(1)
+                        .value_name("#rrggbb")
+                        .long("picker-info-color")
+                        .help("Color of the item count in the picker")
+                )
+                .arg(
+                    Arg::new("picker prompt color")
+                        .required(false)
+                        .num_args(1)
+                        .value_name("#rrggbb")
+                        .long("picker-prompt-color")
+                        .help("Color of the prompt in the picker")
                 )
         )
         .subcommand(Command::new("start").about("Initialize tmux with the default sessions"))
@@ -169,9 +210,11 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 .map(|s| s.to_string())
                 .collect();
 
-            if let Some(target_session) =
-                get_single_selection(&sessions, Some("tmux capture-pane -ept {}".to_string()))?
-            {
+            if let Some(target_session) = get_single_selection(
+                &sessions,
+                Some("tmux capture-pane -ept {}".to_string()),
+                config.picker_colors,
+            )? {
                 execute_tmux_command(&format!(
                     "tmux switch-client -t {}",
                     target_session.replace('.', "_")
@@ -194,9 +237,11 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                 .split('\n')
                 .map(|s| s.to_string())
                 .collect();
-            if let Some(target_window) =
-                get_single_selection(&windows, Some("tmux capture-pane -ept {}".to_string()))?
-            {
+            if let Some(target_window) = get_single_selection(
+                &windows,
+                Some("tmux capture-pane -ept {}".to_string()),
+                config.picker_colors,
+            )? {
                 execute_tmux_command(&format!(
                     "tmux select-window -t {}",
                     target_window.replace('.', "_")
@@ -282,6 +327,37 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
                     }
                     None => todo!(),
                 }
+            }
+
+            if let Some(color) = sub_cmd_matches.get_one::<String>("picker highlight color") {
+                let mut picker_colors =
+                    config.picker_colors.unwrap_or(PickerColorConfig::default());
+                picker_colors.highlight_color = Some(color.to_string());
+                config.picker_colors = Some(picker_colors);
+            }
+            if let Some(color) = sub_cmd_matches.get_one::<String>("picker highlight text color") {
+                let mut picker_colors =
+                    config.picker_colors.unwrap_or(PickerColorConfig::default());
+                picker_colors.highlight_text_color = Some(color.to_string());
+                config.picker_colors = Some(picker_colors);
+            }
+            if let Some(color) = sub_cmd_matches.get_one::<String>("picker border color") {
+                let mut picker_colors =
+                    config.picker_colors.unwrap_or(PickerColorConfig::default());
+                picker_colors.border_color = Some(color.to_string());
+                config.picker_colors = Some(picker_colors);
+            }
+            if let Some(color) = sub_cmd_matches.get_one::<String>("picker info color") {
+                let mut picker_colors =
+                    config.picker_colors.unwrap_or(PickerColorConfig::default());
+                picker_colors.info_color = Some(color.to_string());
+                config.picker_colors = Some(picker_colors);
+            }
+            if let Some(color) = sub_cmd_matches.get_one::<String>("picker prompt color") {
+                let mut picker_colors =
+                    config.picker_colors.unwrap_or(PickerColorConfig::default());
+                picker_colors.prompt_color = Some(color.to_string());
+                config.picker_colors = Some(picker_colors);
             }
 
             config.save().change_context(TmsError::ConfigError)?;
