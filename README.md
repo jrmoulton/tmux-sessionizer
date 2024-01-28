@@ -54,6 +54,14 @@ directory
 
 `bind C-w command-prompt -p "Rename active session to: " "run-shell 'tms rename %1'"`.
 
+### The `tms refresh` command
+
+Using this command you can automatically generate missing worktree windows for the active session or a provided `session_name`. 
+
+`tms refresh <session_name>`
+
+`bind C-r "run-shell 'tms refresh'"`.
+
 ### CLI overview
 
 Use `tms --help`
@@ -72,6 +80,8 @@ Commands:
   sessions  Show running tmux sessions with asterisk on the current session
   rename    Rename the active session and the working directory
   help      Print this message or the help of the given subcommand(s)
+  refresh   Creates new worktree windows for the selected session
+
 
 Options:
   -h, --help     Print help
