@@ -21,7 +21,9 @@ use std::{
     collections::{HashMap, VecDeque},
     error::Error,
     fmt::Display,
-    fs, process,
+    fs,
+    path::Path,
+    process,
 };
 
 fn main() -> Result<(), TmsError> {
@@ -96,11 +98,15 @@ fn main() -> Result<(), TmsError> {
             .change_context(TmsError::IoError)?
             .to_string()?
     };
-    let repo_short_name = std::path::PathBuf::from(&repo_name)
-        .file_name()
-        .expect("None of the paths here should terminate in `..`")
-        .to_string()?
-        .replace('.', "_");
+    let repo_short_name = if config.display_full_path == Some(true) {
+        std::path::PathBuf::from(&repo_name)
+            .file_name()
+            .expect("None of the paths here should terminate in `..`")
+            .to_string()?
+            .replace('.', "_")
+    } else {
+        repo_name
+    };
 
     // Get the tmux sessions
     let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
@@ -194,11 +200,9 @@ pub fn execute_tmux_command(command: &str) -> process::Output {
         .unwrap_or_else(|_| panic!("Failed to execute the tmux command `{command}`"))
 }
 
-
 fn is_in_tmux_session() -> bool {
     std::env::var("TERM_PROGRAM").is_ok_and(|program| program == "tmux")
 }
-
 
 fn get_single_selection(
     list: &[String],
@@ -236,11 +240,7 @@ fn find_repos(
             continue;
         }
 
-        let file_name = file
-            .path
-            .file_name()
-            .expect("The file name doesn't end in `..`")
-            .to_string()?;
+        let file_name = get_repo_name(&file.path, &repos)?;
 
         if let Ok(repo) = git2::Repository::open(file.path.clone()) {
             if repo.is_worktree() {
@@ -251,6 +251,7 @@ fn find_repos(
             } else {
                 file_name
             };
+
             if search_submodules == Some(true) {
                 if let Ok(submodules) = repo.submodules() {
                     find_submodules(
@@ -273,6 +274,29 @@ fn find_repos(
         }
     }
     Ok(repos)
+}
+
+fn get_repo_name(path: &Path, repos: &impl RepoContainer) -> Result<String, TmsError> {
+    let mut repo_name = path
+        .file_name()
+        .expect("The file name doesn't end in `..`")
+        .to_string()?;
+
+    repo_name = if repos.find_repo(&repo_name).is_some() {
+        if let Some(parent) = path.parent() {
+            if let Some(parent) = parent.file_name() {
+                format!("{}/{}", parent.to_string()?, repo_name)
+            } else {
+                repo_name
+            }
+        } else {
+            repo_name
+        }
+    } else {
+        repo_name
+    };
+
+    Ok(repo_name)
 }
 
 fn find_submodules(
