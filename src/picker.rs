@@ -423,7 +423,6 @@ fn str_to_text(s: &str, max: usize) -> Text {
 
     for l in s.lines() {
         let mut line = Line::default();
-        tspan.clear();
         ansi_state = false;
 
         for (i, ch) in l.chars().enumerate() {
@@ -439,9 +438,11 @@ fn str_to_text(s: &str, max: usize) -> Text {
                 } else {
                     tspan.push(ch);
 
-                    if i == max.min(l.len() - 1) {
+                    if (line.width() + tspan.chars().count()) == max || i == (l.chars().count() - 1)
+                    {
                         let span = Span::styled(tspan.clone(), style);
                         line.spans.push(span);
+                        tspan.clear();
                         break;
                     }
                 }
