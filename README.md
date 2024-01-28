@@ -79,8 +79,8 @@ Commands:
   kill      Kill the current tmux session and jump to another
   sessions  Show running tmux sessions with asterisk on the current session
   rename    Rename the active session and the working directory
-  help      Print this message or the help of the given subcommand(s)
   refresh   Creates new worktree windows for the selected session
+  help      Print this message or the help of the given subcommand(s)
 
 
 Options:
