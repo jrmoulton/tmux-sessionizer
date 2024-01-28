@@ -9,8 +9,8 @@ use crate::{
     dirty_paths::DirtyUtf8Path,
 };
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
-use configs::ConfigError;
 use configs::SearchDirectory;
+use configs::{ConfigError, PickerColorConfig};
 use error_stack::{Report, Result, ResultExt};
 use git2::{Repository, Submodule};
 
@@ -79,11 +79,12 @@ fn main() -> Result<(), TmsError> {
         config.recursive_submodules,
     )?;
 
-    let repo_name = if let Some(str) = get_single_selection(&repos.list(), None)? {
-        str
-    } else {
-        return Ok(());
-    };
+    let repo_name =
+        if let Some(str) = get_single_selection(&repos.list(), None, config.picker_colors)? {
+            str
+        } else {
+            return Ok(());
+        };
 
     let found_repo = repos
         .find_repo(&repo_name)
@@ -207,8 +208,9 @@ fn is_in_tmux_session() -> bool {
 fn get_single_selection(
     list: &[String],
     preview_command: Option<String>,
+    colors: Option<PickerColorConfig>,
 ) -> Result<Option<String>, TmsError> {
-    let mut picker = Picker::new(list, preview_command);
+    let mut picker = Picker::new(list, preview_command).set_colors(colors);
 
     Ok(picker.run()?)
 }

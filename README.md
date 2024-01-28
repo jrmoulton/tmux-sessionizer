@@ -112,6 +112,16 @@ Options:
           Search submodules for submodules [possible values: true, false]
   -d, --max-depth <max depth>...
           The maximum depth to traverse when searching for repositories in the search paths, length should match the number of search paths if specified (defaults to 10)
+      --picker-highlight-color <#rrggbb>
+          Background color of the highlighted item in the picker
+      --picker-highlight-text-color <#rrggbb>
+          Text color of the highlighted item in the picker
+      --picker-border-color <#rrggbb>
+          Color of the border between widgets in the picker
+      --picker-info-color <#rrggbb>
+          Color of the item count in the picker
+      --picker-prompt-color <#rrggbb>
+          Color of the prompt in the picker
   -h, --help
           Print help
 
