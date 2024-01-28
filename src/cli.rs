@@ -6,7 +6,7 @@ use crate::{
 };
 use clap::{Arg, ArgMatches, Command};
 use error_stack::{Result, ResultExt};
-use git2::Repository;
+use git2::{Repository, WorktreePruneOptions};
 
 pub(crate) fn create_app() -> ArgMatches {
     Command::new("tms")
@@ -442,30 +442,59 @@ pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGive
             .lines()
             .map(|line| line.replace("'", ""))
             .collect();
+            let create_window =
+                |session_name: &str, path_to_tree: &str, window_name: Option<&str>| {
+                    let args: Vec<_> = vec![
+                        Some("new-window"),
+                        Some("-t"),
+                        Some(session_name),
+                        Some("-c"),
+                        Some(path_to_tree),
+                        window_name.map(|_| "-n"),
+                        window_name.map(|s| s),
+                    ]
+                    .iter()
+                    .cloned()
+                    .filter_map(|f| f.map(|f| String::from(f)))
+                    .collect();
+                    execute_command("tmux", args);
+                };
 
-            if let Ok(repository) = Repository::open(session_path) {
+            if let Ok(repository) = Repository::open(&session_path) {
+                let mut num_worktree_windows = 0;
                 if let Ok(worktrees) = repository.worktrees() {
                     for worktree_name in worktrees.iter().filter_map(|f| f) {
+                        let worktree = repository
+                            .find_worktree(worktree_name)
+                            .change_context(TmsError::GitError)?;
                         if existing_window_names.contains(&String::from(worktree_name)) {
+                            num_worktree_windows += 1;
                             continue;
                         }
-                        let path_to_tree = repository
-                            .find_worktree(worktree_name)
-                            .change_context(TmsError::GitError)?
-                            .path()
-                            .to_string()?;
-                        execute_command(
-                            "tmux",
-                            vec![
-                                String::from("new-window"),
-                                String::from("-t"),
-                                String::from(session_name.clone()),
-                                String::from("-c"),
-                                String::from(path_to_tree),
-                                String::from("-n"),
-                                String::from(worktree_name),
-                            ],
-                        );
+                        if !worktree.is_prunable(None).unwrap_or_default() {
+                            num_worktree_windows += 1;
+                            // prunable worktrees can have an invalid path so skip that
+                            create_window(
+                                &session_name,
+                                &worktree.path().to_string()?,
+                                Some(&worktree_name),
+                            );
+                        }
+                    }
+                }
+                //check if a window is needed for non worktree
+                if !repository.is_bare() {
+                    let count_current_windows = String::from_utf8(
+                        execute_tmux_command(&format!(
+                            "tmux list-windows -t {session_name} -F '#{{window_name}}'"
+                        ))
+                        .stdout,
+                    )
+                    .unwrap()
+                    .lines()
+                    .count();
+                    if count_current_windows <= num_worktree_windows {
+                        create_window(&session_name, &session_path, None);
                     }
                 }
             }
