@@ -11,11 +11,11 @@ use crossterm::{
 };
 use nucleo::{
     pattern::{CaseMatching, Normalization},
-    Nucleo,
+    Nucleo, Snapshot,
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{
@@ -150,24 +150,40 @@ impl Picker {
     }
 
     fn render(&mut self, f: &mut Frame) {
-        let horizontal_split = if self.preview_command.is_some() {
+        let preview_direction;
+        let picker_pane;
+        let preview_pane;
+
+        let preview_split = if self.preview_command.is_some() {
+            preview_direction = if f.size().width.div_ceil(2) >= f.size().height {
+                picker_pane = 0;
+                preview_pane = 1;
+                Direction::Horizontal
+            } else {
+                picker_pane = 1;
+                preview_pane = 0;
+                Direction::Vertical
+            };
             Layout::new(
-                Direction::Horizontal,
+                preview_direction,
                 [Constraint::Percentage(50), Constraint::Percentage(50)],
             )
             .split(f.size())
         } else {
+            picker_pane = 0;
+            preview_pane = 1;
+            preview_direction = Direction::Horizontal;
             [f.size()].into()
         };
 
         let layout = Layout::new(
             Direction::Vertical,
             [
-                Constraint::Length(f.size().height - 1),
+                Constraint::Length(preview_split[picker_pane].height - 1),
                 Constraint::Length(1),
             ],
         )
-        .split(horizontal_split[0]);
+        .split(preview_split[picker_pane]);
 
         self.matcher.tick(10);
         let snapshot = self.matcher.snapshot();
@@ -237,32 +253,56 @@ impl Picker {
         f.set_cursor(layout[1].x + self.cursor_pos + 2, layout[1].y);
 
         if let Some(command) = &self.preview_command {
-            let text = if let Some(index) = self.selection.selected() {
-                if let Some(item) = snapshot.get_matched_item(index as u32) {
-                    let command = command.replace("{}", item.data);
-                    let output = execute_tmux_command(&command);
+            self.render_preview(
+                command,
+                snapshot,
+                f,
+                &border_color,
+                &preview_direction,
+                preview_split[preview_pane],
+            );
+        }
+    }
 
-                    if output.status.success() {
-                        String::from_utf8(output.stdout).unwrap()
-                    } else {
-                        "".to_string()
-                    }
+    fn render_preview(
+        &self,
+        command: &str,
+        snapshot: &Snapshot<String>,
+        f: &mut Frame,
+        border_color: &Color,
+        direction: &Direction,
+        rect: Rect,
+    ) {
+        let text = if let Some(index) = self.selection.selected() {
+            if let Some(item) = snapshot.get_matched_item(index as u32) {
+                let command = command.replace("{}", item.data);
+                let output = execute_tmux_command(&command);
+
+                if output.status.success() {
+                    String::from_utf8(output.stdout).unwrap()
                 } else {
                     "".to_string()
                 }
             } else {
                 "".to_string()
-            };
-            let text = str_to_text(&text, (horizontal_split[1].width - 1).into());
-            let preview = Paragraph::new(text)
-                .block(
-                    Block::default()
-                        .borders(Borders::LEFT)
-                        .border_style(Style::default().fg(border_color)),
-                )
-                .wrap(Wrap { trim: false });
-            f.render_widget(preview, horizontal_split[1]);
-        }
+            }
+        } else {
+            "".to_string()
+        };
+        let text = str_to_text(&text, (rect.width - 1).into());
+        let border_position = if *direction == Direction::Horizontal {
+            Borders::LEFT
+        } else {
+            Borders::BOTTOM
+        };
+        let preview = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(border_position)
+                    .border_style(Style::default().fg(*border_color)),
+            )
+            .wrap(Wrap { trim: false });
+        f.render_widget(preview, rect);
     }
 
     fn get_selected(&self) -> Option<String> {
