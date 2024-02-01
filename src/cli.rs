@@ -1,8 +1,10 @@
 use std::{collections::HashMap, fs::canonicalize};
 
 use crate::{
-    configs::Config, configs::SearchDirectory, dirty_paths::DirtyUtf8Path, execute_command,
-    execute_tmux_command, get_single_selection, TmsError,
+    configs::SearchDirectory,
+    configs::{Config, SessionSortOrderConfig},
+    dirty_paths::DirtyUtf8Path,
+    execute_command, execute_tmux_command, get_single_selection, TmsError,
 };
 use clap::{Arg, ArgMatches, Command};
 use error_stack::{Result, ResultExt};
@@ -122,6 +124,15 @@ pub(crate) fn create_app() -> ArgMatches {
                         .value_name("#rrggbb")
                         .long("picker-prompt-color")
                         .help("Color of the prompt in the picker")
+                )
+                .arg(
+                    Arg::new("session sort order")
+                        .required(false)
+                        .num_args(1)
+                        .value_parser(clap::value_parser!(SessionSortOrderConfig))
+                        .value_name("Alphabetical|LastAttached")
+                        .long("session-sort-order")
+                        .help("Set the sort order of the sessions in the switch command")
                 )
         )
         .subcommand(Command::new("start").about("Initialize tmux with the default sessions"))
@@ -249,16 +260,24 @@ fn start_command(config: Config) -> Result<(), TmsError> {
 
 fn switch_command(config: Config) -> Result<(), TmsError> {
     let sessions = String::from_utf8(
-        execute_tmux_command("tmux list-sessions -F '#{?session_attached,,#{session_name}}").stdout,
+        execute_tmux_command(
+            "tmux list-sessions -F '#{?session_attached,,#{session_name}#,#{session_last_attached}}",
+        )
+        .stdout,
     )
     .unwrap();
-    let sessions: Vec<String> = sessions
-        .replace('\'', "")
-        .replace("\n\n", "\n")
+    let cleaned = sessions.replace('\'', "").replace("\n\n", "\n");
+    let mut sessions: Vec<(&str, &str)> = cleaned
         .trim()
         .split('\n')
-        .map(|s| s.to_string())
+        .filter_map(|s| s.split_once(','))
         .collect();
+
+    if let Some(SessionSortOrderConfig::LastAttached) = config.session_sort_order {
+        sessions.sort_by(|a, b| b.1.cmp(a.1));
+    }
+
+    let sessions: Vec<String> = sessions.into_iter().map(|s| s.0.to_string()).collect();
 
     if let Some(target_session) = get_single_selection(
         &sessions,
@@ -400,6 +419,10 @@ fn config_command(sub_cmd_matches: &ArgMatches, mut config: Config) -> Result<()
         let mut picker_colors = config.picker_colors.unwrap_or_default();
         picker_colors.prompt_color = Some(color.to_string());
         config.picker_colors = Some(picker_colors);
+    }
+
+    if let Some(order) = sub_cmd_matches.get_one::<SessionSortOrderConfig>("session sort order") {
+        config.session_sort_order = Some(order.to_owned());
     }
 
     config.save().change_context(TmsError::ConfigError)?;

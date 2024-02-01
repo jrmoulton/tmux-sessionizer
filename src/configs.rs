@@ -1,3 +1,4 @@
+use clap::ValueEnum;
 use error_stack::{Result, ResultExt};
 use std::{env, fmt::Display, io::Write, path::PathBuf};
 
@@ -33,6 +34,7 @@ pub struct Config {
     pub display_full_path: Option<bool>,
     pub search_submodules: Option<bool>,
     pub recursive_submodules: Option<bool>,
+    pub session_sort_order: Option<SessionSortOrderConfig>,
     pub excluded_dirs: Option<Vec<String>>,
     pub search_paths: Option<Vec<String>>, // old format, deprecated
     pub search_dirs: Option<Vec<SearchDirectory>>,
@@ -215,5 +217,28 @@ fn rgb_to_color(color: &str) -> Option<Color> {
         Some(Color::Rgb(red, green, blue))
     } else {
         None
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum SessionSortOrderConfig {
+    Alphabetical,
+    LastAttached,
+}
+
+impl ValueEnum for SessionSortOrderConfig {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Alphabetical, Self::LastAttached]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            SessionSortOrderConfig::Alphabetical => {
+                Some(clap::builder::PossibleValue::new("Alphabetical"))
+            }
+            SessionSortOrderConfig::LastAttached => {
+                Some(clap::builder::PossibleValue::new("LastAttached"))
+            }
+        }
     }
 }
