@@ -97,34 +97,35 @@ Usage: tms config [OPTIONS]
 
 Options:
   -p, --paths <search paths>...
-          The paths to search through. Shell like expansions such as `~` are supported
+          The paths to search through. Shell like expansions such as '~' are supported
   -s, --session <default session>
           The default session to switch to (if available) when killing another session
       --excluded <excluded dirs>...
           As many directory names as desired to not be searched over
       --remove <remove dir>...
-          As many directory names to be removed from the exclusion list
+          As many directory names to be removed from exclusion list
       --full-path <true | false>
           Use the full path when displaying directories [possible values: true, false]
       --search-submodules <true | false>
           Also show initialized submodules [possible values: true, false]
       --recursive-submodules <true | false>
           Search submodules for submodules [possible values: true, false]
-  -d, --max-depth <max depth>...
-          The maximum depth to traverse when searching for repositories in the search paths, length should match the number of search paths if specified (defaults to 10)
+  -d, --max-depths <max depth>...
+          The maximum depth to traverse when searching for repositories in search paths, length should match the number of search paths if specified (defaults to 10)
       --picker-highlight-color <#rrggbb>
           Background color of the highlighted item in the picker
       --picker-highlight-text-color <#rrggbb>
-          Text color of the highlighted item in the picker
+          Text color of the hightlighted item in the picker
       --picker-border-color <#rrggbb>
-          Color of the border between widgets in the picker
+          Color of the borders between widgets in the picker
       --picker-info-color <#rrggbb>
           Color of the item count in the picker
       --picker-prompt-color <#rrggbb>
           Color of the prompt in the picker
+      --session-sort-order <Alphabetical | LastAttach>
+          Set the sort order of the sessions in the switch command [possible values: Alphabetical, LastAttached]
   -h, --help
           Print help
-
 ```
 #### Config file location
 
