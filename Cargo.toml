@@ -17,7 +17,7 @@ exclude = ["images/*"]
 
 [dependencies]
 git2 = "0.18.1"
-clap = { version = "4.4.6", features = ["cargo"] }
+clap = { version = "4.4.6", features = ["cargo", "derive"] }
 serde_derive = "1.0"
 serde = "1.0"
 error-stack = "0.4.1"

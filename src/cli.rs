@@ -6,212 +6,149 @@ use crate::{
     dirty_paths::DirtyUtf8Path,
     execute_command, execute_tmux_command, get_single_selection, TmsError,
 };
-use clap::{Arg, ArgMatches, Command};
+use clap::{Args, Parser, Subcommand};
 use error_stack::{Result, ResultExt};
 use git2::Repository;
 
-pub(crate) fn create_app() -> ArgMatches {
-    Command::new("tms")
-        .author("Jared Moulton <jaredmoulton3@gmail.com>")
-        .version(clap::crate_version!())
-        .about("Scan for all git folders in specified directories, select one and open it as a new tmux session")
-        .subcommand(
-            Command::new("config")
-                .arg_required_else_help(true)
-                .about("Configure the defaults for search paths and excluded directories")
-                .arg(
-                    Arg::new("search paths")
-                        .short('p')
-                        .long("paths")
-                        .required(false)
-                        .num_args(1..)
-                        .help("The paths to search through. Shell like expansions such as `~` are supported")
-                )
-                .arg(
-                    Arg::new("default session")
-                        .short('s')
-                        .long("session")
-                        .required(false)
-                        .num_args(1)
-                        .help("The default session to switch to (if available) when killing another session")
-                )
-                .arg(
-                    Arg::new("excluded dirs")
-                        .long("excluded")
-                        .required(false)
-                        .num_args(1..)
-                        .help("As many directory names as desired to not be searched over")
-                )
-                .arg(
-                    Arg::new("remove dir")
-                        .required(false)
-                        .num_args(1..)
-                        .long("remove")
-                        .help("As many directory names to be removed from the exclusion list")
-                )
-                .arg(
-                    Arg::new("display full path")
-                        .required(false)
-                        .num_args(1)
-                        .value_name("true | false")
-                        .value_parser(clap::value_parser!(bool))
-                        .long("full-path")
-                        .help("Use the full path when displaying directories")
-                )
-                .arg(
-                    Arg::new("search submodules")
-                        .required(false)
-                        .num_args(1)
-                        .value_name("true | false")
-                        .value_parser(clap::value_parser!(bool))
-                        .long("search-submodules")
-                        .help("Also show initialized submodules")
-                )
-                .arg(
-                    Arg::new("recursive submodules")
-                        .required(false)
-                        .num_args(1)
-                        .value_name("true | false")
-                        .value_parser(clap::value_parser!(bool))
-                        .long("recursive-submodules")
-                        .help("Search submodules for submodules")
-                )
-                .arg(
-                    Arg::new("max depth")
-                        .required(false)
-                        .num_args(1..)
-                        .value_parser(clap::value_parser!(usize))
-                        .short('d')
-                        .long("max-depth")
-                        .help("The maximum depth to traverse when searching for repositories in the search paths, length should match the number of search paths if specified (defaults to 10)")
-                )
-                .arg(
-                    Arg::new("picker highlight color")
-                        .required(false)
-                        .num_args(1)
-                        .value_name("#rrggbb")
-                        .long("picker-highlight-color")
-                        .help("Background color of the highlighted item in the picker")
-                )
-                .arg(
-                    Arg::new("picker highlight text color")
-                        .required(false)
-                        .num_args(1)
-                        .value_name("#rrggbb")
-                        .long("picker-highlight-text-color")
-                        .help("Text color of the highlighted item in the picker")
-                )
-                .arg(
-                    Arg::new("picker border color")
-                        .required(false)
-                        .num_args(1)
-                        .value_name("#rrggbb")
-                        .long("picker-border-color")
-                        .help("Color of the border between widgets in the picker")
-                )
-                .arg(
-                    Arg::new("picker info color")
-                        .required(false)
-                        .num_args(1)
-                        .value_name("#rrggbb")
-                        .long("picker-info-color")
-                        .help("Color of the item count in the picker")
-                )
-                .arg(
-                    Arg::new("picker prompt color")
-                        .required(false)
-                        .num_args(1)
-                        .value_name("#rrggbb")
-                        .long("picker-prompt-color")
-                        .help("Color of the prompt in the picker")
-                )
-                .arg(
-                    Arg::new("session sort order")
-                        .required(false)
-                        .num_args(1)
-                        .value_parser(clap::value_parser!(SessionSortOrderConfig))
-                        .value_name("Alphabetical|LastAttached")
-                        .long("session-sort-order")
-                        .help("Set the sort order of the sessions in the switch command")
-                )
-        )
-        .subcommand(Command::new("start").about("Initialize tmux with the default sessions"))
-        .subcommand(Command::new("switch").about("Display other sessions with a fuzzy finder and a preview window"))
-        .subcommand(Command::new("windows").about("Display the current session's windows with a fuzzy finder and a preview window"))
-        .subcommand(Command::new("kill")
-            .about("Kill the current tmux session and jump to another")
-        )
-        .subcommand(Command::new("sessions")
-            .about("Show running tmux sessions with asterisk on the current session")
-        )
-        .subcommand(Command::new("rename")
-            .arg_required_else_help(true)
-            .about("Rename the active session and the working directory")
-            .arg(
-                Arg::new("name")
-                .required(true)
-                .help("The new session's name")
-            )
-        )
-        .subcommand(Command::new("refresh")
-            .about("Creates new worktree windows for the selected session")
-            .arg(
-                Arg::new("name")
-                .required(false)
-                .help("The session's name. If not provided gets current session")
-            )
-        )
-        .get_matches()
+#[derive(Debug, Parser)]
+#[command(author, version)]
+///Scan for all git folders in specified directorires, select one and open it as a new tmux session
+pub struct Cli {
+    #[command(subcommand)]
+    command: Option<CliCommand>,
 }
 
-pub(crate) fn handle_sub_commands(cli_args: ArgMatches) -> Result<SubCommandGiven, TmsError> {
-    // Get the configuration from the config file
-    let config = Config::new().change_context(TmsError::ConfigError)?;
-    match cli_args.subcommand() {
-        Some(("start", _sub_cmd_matches)) => {
-            start_command(config)?;
-            Ok(SubCommandGiven::Yes)
-        }
+#[derive(Debug, Subcommand)]
+pub enum CliCommand {
+    #[command(arg_required_else_help = true)]
+    /// Configure the defaults for search paths and excluded directories
+    Config(Box<ConfigCommand>),
+    /// Initialize tmux with the default sessions
+    Start,
+    /// Display other sessions with a fuzzy finder and a preview window
+    Switch,
+    /// Display the current session's windows with a fuzzy finder and a preview window
+    Windows,
+    /// Kill the current tmux session and jump to another
+    Kill,
+    /// Show running tmux sessions with asterisk on the current session
+    Sessions,
+    #[command(arg_required_else_help = true)]
+    /// Rename the active session and the working directory
+    Rename(RenameCommand),
+    /// Creates new worktree windows for the selected session
+    Refresh(RefreshCommand),
+}
 
-        Some(("switch", _sub_cmd_matches)) => {
-            switch_command(config)?;
-            Ok(SubCommandGiven::Yes)
-        }
+#[derive(Debug, Args)]
+pub struct ConfigCommand {
+    #[arg(short = 'p', long = "paths", value_name = "search paths", num_args = 1..)]
+    /// The paths to search through. Shell like expansions such as '~' are supported
+    search_paths: Option<Vec<String>>,
+    #[arg(short = 's', long = "session", value_name = "default session")]
+    /// The default session to switch to (if available) when killing another session
+    default_session: Option<String>,
+    #[arg(long = "excluded", value_name = "excluded dirs", num_args = 1..)]
+    /// As many directory names as desired to not be searched over
+    excluded_dirs: Option<Vec<String>>,
+    #[arg(long = "remove", value_name = "remove dir", num_args = 1..)]
+    /// As many directory names to be removed from exclusion list
+    remove_dir: Option<Vec<String>>,
+    #[arg(long = "full-path", value_name = "true | false")]
+    /// Use the full path when displaying directories
+    display_full_path: Option<bool>,
+    #[arg(long, value_name = "true | false")]
+    /// Also show initialized submodules
+    search_submodules: Option<bool>,
+    #[arg(long, value_name = "true | false")]
+    /// Search submodules for submodules
+    recursive_submodules: Option<bool>,
+    #[arg(long, short = 'd', value_name = "max depth", num_args = 1..)]
+    /// The maximum depth to traverse when searching for repositories in search paths, length
+    /// should match the number of search paths if specified (defaults to 10)
+    max_depths: Option<Vec<usize>>,
+    #[arg(long, value_name = "#rrggbb")]
+    /// Background color of the highlighted item in the picker
+    picker_highlight_color: Option<String>,
+    #[arg(long, value_name = "#rrggbb")]
+    /// Text color of the hightlighted item in the picker
+    picker_highlight_text_color: Option<String>,
+    #[arg(long, value_name = "#rrggbb")]
+    /// Color of the borders between widgets in the picker
+    picker_border_color: Option<String>,
+    #[arg(long, value_name = "#rrggbb")]
+    /// Color of the item count in the picker
+    picker_info_color: Option<String>,
+    #[arg(long, value_name = "#rrggbb")]
+    /// Color of the prompt in the picker
+    picker_prompt_color: Option<String>,
+    #[arg(long, value_name = "Alphabetical | LastAttach")]
+    /// Set the sort order of the sessions in the switch command
+    session_sort_order: Option<SessionSortOrderConfig>,
+}
 
-        Some(("windows", _sub_cmd_matches)) => {
-            windows_command(config)?;
-            Ok(SubCommandGiven::Yes)
-        }
-        // Handle the config subcommand
-        Some(("config", sub_cmd_matches)) => {
-            config_command(sub_cmd_matches, config)?;
-            Ok(SubCommandGiven::Yes)
-        }
+#[derive(Debug, Args)]
+pub struct RenameCommand {
+    /// The new session's name
+    name: String,
+}
 
-        // The kill subcommand will kill the current session and switch to another one
-        Some(("kill", _)) => {
-            kill_subcommand(config)?;
-            Ok(SubCommandGiven::Yes)
-        }
+#[derive(Debug, Args)]
+pub struct RefreshCommand {
+    /// The session's name. If not provided gets current session
+    name: Option<String>,
+}
 
-        // The sessions subcommand will print the sessions with an asterisk over the current
-        // session
-        Some(("sessions", _)) => {
-            sessions_subcommand()?;
-            Ok(SubCommandGiven::Yes)
-        }
+impl Cli {
+    pub(crate) fn handle_sub_commands(&self) -> Result<SubCommandGiven, TmsError> {
+        // Get the configuration from the config file
+        let config = Config::new().change_context(TmsError::ConfigError)?;
+        match &self.command {
+            Some(CliCommand::Start) => {
+                start_command(config)?;
+                Ok(SubCommandGiven::Yes)
+            }
 
-        // Rename the active session and the working directory
-        // rename
-        Some(("rename", sub_cmd_matches)) => {
-            rename_subcommand(sub_cmd_matches)?;
-            Ok(SubCommandGiven::Yes)
+            Some(CliCommand::Switch) => {
+                switch_command(config)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            Some(CliCommand::Windows) => {
+                windows_command(config)?;
+                Ok(SubCommandGiven::Yes)
+            }
+            // Handle the config subcommand
+            Some(CliCommand::Config(args)) => {
+                config_command(args, config)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            // The kill subcommand will kill the current session and switch to another one
+            Some(CliCommand::Kill) => {
+                kill_subcommand(config)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            // The sessions subcommand will print the sessions with an asterisk over the current
+            // session
+            Some(CliCommand::Sessions) => {
+                sessions_subcommand()?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            // Rename the active session and the working directory
+            // rename
+            Some(CliCommand::Rename(args)) => {
+                rename_subcommand(args)?;
+                Ok(SubCommandGiven::Yes)
+            }
+            Some(CliCommand::Refresh(args)) => {
+                refresh_command(args)?;
+                Ok(SubCommandGiven::Yes)
+            }
+            None => Ok(SubCommandGiven::No(config.into())),
         }
-        Some(("refresh", sub_cmd_matches)) => {
-            refresh_command(sub_cmd_matches)?;
-            Ok(SubCommandGiven::Yes)
-        }
-        _ => Ok(SubCommandGiven::No(config.into())),
     }
 }
 
@@ -318,16 +255,13 @@ fn windows_command(config: Config) -> Result<(), TmsError> {
     Ok(())
 }
 
-fn config_command(sub_cmd_matches: &ArgMatches, mut config: Config) -> Result<(), TmsError> {
-    let max_depths = match sub_cmd_matches.get_many::<usize>("max depth") {
-        Some(depths) => depths.collect::<Vec<_>>(),
-        None => Vec::new(),
-    };
-    config.search_dirs = match sub_cmd_matches.get_many::<String>("search paths") {
+fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsError> {
+    let max_depths = args.max_depths.clone().unwrap_or_default();
+    config.search_dirs = match &args.search_paths {
         Some(paths) => Some(
             paths
-                .into_iter()
-                .zip(max_depths.into_iter().chain(std::iter::repeat(&10)))
+                .iter()
+                .zip(max_depths.into_iter().chain(std::iter::repeat(10)))
                 .map(|(path, depth)| {
                     let path = if path.ends_with('/') {
                         let mut modified_path = path.clone();
@@ -337,7 +271,7 @@ fn config_command(sub_cmd_matches: &ArgMatches, mut config: Config) -> Result<()
                         path.clone()
                     };
                     shellexpand::full(&path)
-                        .map(|val| (val.to_string(), *depth))
+                        .map(|val| (val.to_string(), depth))
                         .change_context(TmsError::IoError)
                 })
                 .collect::<Result<Vec<(String, usize)>, TmsError>>()?
@@ -352,76 +286,76 @@ fn config_command(sub_cmd_matches: &ArgMatches, mut config: Config) -> Result<()
         None => config.search_dirs,
     };
 
-    if let Some(default_session) = sub_cmd_matches
-        .get_one::<String>("default session")
+    if let Some(default_session) = args
+        .default_session
+        .clone()
         .map(|val| val.replace('.', "_"))
     {
         config.default_session = Some(default_session);
     }
 
-    if let Some(display) = sub_cmd_matches.get_one::<bool>("display full path") {
+    if let Some(display) = args.display_full_path {
         config.display_full_path = Some(display.to_owned());
     }
 
-    if let Some(submodules) = sub_cmd_matches.get_one::<bool>("search submodules") {
+    if let Some(submodules) = args.search_submodules {
         config.search_submodules = Some(submodules.to_owned());
     }
 
-    if let Some(submodules) = sub_cmd_matches.get_one::<bool>("recursive submodules") {
+    if let Some(submodules) = args.recursive_submodules {
         config.recursive_submodules = Some(submodules.to_owned());
     }
 
-    if let Some(dirs) = sub_cmd_matches.get_many::<String>("excluded dirs") {
+    if let Some(dirs) = &args.excluded_dirs {
         let current_excluded = config.excluded_dirs;
         match current_excluded {
             Some(mut excl_dirs) => {
-                excl_dirs.extend(dirs.into_iter().map(|str| str.to_string()));
+                excl_dirs.extend(dirs.iter().map(|str| str.to_string()));
                 config.excluded_dirs = Some(excl_dirs)
             }
             None => {
-                config.excluded_dirs = Some(dirs.into_iter().map(|str| str.to_string()).collect());
+                config.excluded_dirs = Some(dirs.iter().map(|str| str.to_string()).collect());
             }
         }
     }
-    if let Some(dirs) = sub_cmd_matches.get_one::<String>("remove dir") {
+    if let Some(dirs) = &args.remove_dir {
         let current_excluded = config.excluded_dirs;
         match current_excluded {
             Some(mut excl_dirs) => {
-                dirs.split(' ')
-                    .for_each(|dir| excl_dirs.retain(|x| x != dir));
+                dirs.iter().for_each(|dir| excl_dirs.retain(|x| x != dir));
                 config.excluded_dirs = Some(excl_dirs);
             }
             None => todo!(),
         }
     }
 
-    if let Some(color) = sub_cmd_matches.get_one::<String>("picker highlight color") {
+    if let Some(color) = &args.picker_highlight_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
         picker_colors.highlight_color = Some(color.to_string());
         config.picker_colors = Some(picker_colors);
     }
-    if let Some(color) = sub_cmd_matches.get_one::<String>("picker highlight text color") {
+    if let Some(color) = &args.picker_highlight_text_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
         picker_colors.highlight_text_color = Some(color.to_string());
         config.picker_colors = Some(picker_colors);
     }
-    if let Some(color) = sub_cmd_matches.get_one::<String>("picker border color") {
+    if let Some(color) = &args.picker_border_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
         picker_colors.border_color = Some(color.to_string());
         config.picker_colors = Some(picker_colors);
     }
-    if let Some(color) = sub_cmd_matches.get_one::<String>("picker info color") {
+    if let Some(color) = &args.picker_info_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
         picker_colors.info_color = Some(color.to_string());
         config.picker_colors = Some(picker_colors);
     }
-    if let Some(color) = sub_cmd_matches.get_one::<String>("picker prompt color") {
+    if let Some(color) = &args.picker_prompt_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
         picker_colors.prompt_color = Some(color.to_string());
         config.picker_colors = Some(picker_colors);
     }
 
-    if let Some(order) = sub_cmd_matches.get_one::<SessionSortOrderConfig>("session sort order") {
+    if let Some(order) = &args.session_sort_order {
         config.session_sort_order = Some(order.to_owned());
     }
 
@@ -483,8 +417,8 @@ fn sessions_subcommand() -> Result<(), TmsError> {
     Ok(())
 }
 
-fn rename_subcommand(sub_cmd_matches: &ArgMatches) -> Result<(), TmsError> {
-    let new_session_name = sub_cmd_matches.get_one::<String>("name").unwrap();
+fn rename_subcommand(args: &RenameCommand) -> Result<(), TmsError> {
+    let new_session_name = &args.name;
 
     let raw_current_session =
         String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout).unwrap();
@@ -543,12 +477,12 @@ fn rename_subcommand(sub_cmd_matches: &ArgMatches) -> Result<(), TmsError> {
     Ok(())
 }
 
-fn refresh_command(sub_cmd_matches: &ArgMatches) -> Result<(), TmsError> {
-    let session_name = sub_cmd_matches
-        .get_one::<String>("name")
+fn refresh_command(args: &RefreshCommand) -> Result<(), TmsError> {
+    let session_name = args
+        .name
+        .clone()
         .unwrap_or(
-            &String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
-                .unwrap(),
+            String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout).unwrap(),
         )
         .trim()
         .replace('\'', "");

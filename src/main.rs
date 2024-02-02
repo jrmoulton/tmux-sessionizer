@@ -5,10 +5,11 @@ mod picker;
 mod repos;
 
 use crate::{
-    cli::{create_app, handle_sub_commands, SubCommandGiven},
+    cli::{Cli, SubCommandGiven},
     dirty_paths::DirtyUtf8Path,
 };
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
+use clap::Parser;
 use configs::SearchDirectory;
 use configs::{ConfigError, PickerColorConfig};
 use error_stack::{Report, Result, ResultExt};
@@ -35,8 +36,8 @@ fn main() -> Result<(), TmsError> {
     Report::install_debug_hook::<std::panic::Location>(|_value, _context| {});
 
     // Use CLAP to parse the command line arguments
-    let cli_args = create_app();
-    let config = match handle_sub_commands(cli_args)? {
+    let cli_args = Cli::parse();
+    let config = match cli_args.handle_sub_commands()? {
         SubCommandGiven::Yes => return Ok(()),
         SubCommandGiven::No(config) => config, // continue
     };
