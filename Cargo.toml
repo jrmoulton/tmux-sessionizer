@@ -24,11 +24,11 @@ error-stack = "0.4.1"
 shellexpand = "3.1.0"
 aho-corasick = "1.0.1"
 shell-words = "1.1.0"
-config = { version = "0.13.4", default-features = false, features = ["toml"] }
-toml = "0.5"
+config = { version = "0.14", default-features = false, features = ["toml"] }
+toml = "0.8"
 dirs = "5.0.1"
 nucleo = "0.3.0"
-ratatui = "0.25.0"
+ratatui = "0.26.0"
 crossterm = "0.27.0"
 
 [[bin]]
