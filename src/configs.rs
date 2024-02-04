@@ -1,6 +1,8 @@
+use clap::ValueEnum;
 use error_stack::{Result, ResultExt};
 use std::{env, fmt::Display, io::Write, path::PathBuf};
 
+use ratatui::style::{Color, Style};
 use serde_derive::{Deserialize, Serialize};
 
 use crate::Suggestion;
@@ -32,10 +34,12 @@ pub struct Config {
     pub display_full_path: Option<bool>,
     pub search_submodules: Option<bool>,
     pub recursive_submodules: Option<bool>,
+    pub session_sort_order: Option<SessionSortOrderConfig>,
     pub excluded_dirs: Option<Vec<String>>,
     pub search_paths: Option<Vec<String>>, // old format, deprecated
     pub search_dirs: Option<Vec<SearchDirectory>>,
     pub sessions: Option<Vec<Session>>,
+    pub picker_colors: Option<PickerColorConfig>,
 }
 
 impl Config {
@@ -151,3 +155,90 @@ pub struct Window {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Pane {}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct PickerColorConfig {
+    pub highlight_color: Option<String>,
+    pub highlight_text_color: Option<String>,
+    pub border_color: Option<String>,
+    pub info_color: Option<String>,
+    pub prompt_color: Option<String>,
+}
+
+impl PickerColorConfig {
+    pub fn highlight_style(&self) -> Style {
+        let mut style = Style::default().bg(Color::LightBlue).fg(Color::Black);
+
+        if let Some(color) = &self.highlight_color {
+            if let Some(color) = rgb_to_color(color) {
+                style = style.bg(color);
+            }
+        }
+
+        if let Some(color) = &self.highlight_text_color {
+            if let Some(color) = rgb_to_color(color) {
+                style = style.fg(color);
+            }
+        }
+
+        style
+    }
+
+    pub fn border_color(&self) -> Option<Color> {
+        if let Some(color) = &self.border_color {
+            rgb_to_color(color)
+        } else {
+            None
+        }
+    }
+
+    pub fn info_color(&self) -> Option<Color> {
+        if let Some(color) = &self.info_color {
+            rgb_to_color(color)
+        } else {
+            None
+        }
+    }
+
+    pub fn prompt_color(&self) -> Option<Color> {
+        if let Some(color) = &self.prompt_color {
+            rgb_to_color(color)
+        } else {
+            None
+        }
+    }
+}
+
+fn rgb_to_color(color: &str) -> Option<Color> {
+    if color.len() == 7 && color.starts_with('#') {
+        let red = u8::from_str_radix(&color[1..3], 16).ok()?;
+        let green = u8::from_str_radix(&color[3..5], 16).ok()?;
+        let blue = u8::from_str_radix(&color[5..7], 16).ok()?;
+        Some(Color::Rgb(red, green, blue))
+    } else {
+        None
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum SessionSortOrderConfig {
+    Alphabetical,
+    LastAttached,
+}
+
+impl ValueEnum for SessionSortOrderConfig {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Alphabetical, Self::LastAttached]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            SessionSortOrderConfig::Alphabetical => {
+                Some(clap::builder::PossibleValue::new("Alphabetical"))
+            }
+            SessionSortOrderConfig::LastAttached => {
+                Some(clap::builder::PossibleValue::new("LastAttached"))
+            }
+        }
+    }
+}

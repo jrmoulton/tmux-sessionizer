@@ -11,11 +11,11 @@ use crossterm::{
 };
 use nucleo::{
     pattern::{CaseMatching, Normalization},
-    Nucleo,
+    Nucleo, Snapshot,
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{
@@ -25,11 +25,13 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::{execute_tmux_command, TmsError};
+use crate::{configs::PickerColorConfig, execute_tmux_command, TmsError};
 
 pub struct Picker {
     matcher: Nucleo<String>,
     preview_command: Option<String>,
+
+    colors: Option<PickerColorConfig>,
 
     selection: ListState,
     filter: String,
@@ -49,10 +51,17 @@ impl Picker {
         Picker {
             matcher,
             preview_command,
+            colors: None,
             selection: ListState::default(),
             filter: String::default(),
             cursor_pos: 0,
         }
+    }
+
+    pub fn set_colors(mut self, colors: Option<PickerColorConfig>) -> Self {
+        self.colors = colors;
+
+        self
     }
 
     pub fn run(&mut self) -> Result<Option<String>, TmsError> {
@@ -141,24 +150,40 @@ impl Picker {
     }
 
     fn render(&mut self, f: &mut Frame) {
-        let horizontal_split = if self.preview_command.is_some() {
+        let preview_direction;
+        let picker_pane;
+        let preview_pane;
+
+        let preview_split = if self.preview_command.is_some() {
+            preview_direction = if f.size().width.div_ceil(2) >= f.size().height {
+                picker_pane = 0;
+                preview_pane = 1;
+                Direction::Horizontal
+            } else {
+                picker_pane = 1;
+                preview_pane = 0;
+                Direction::Vertical
+            };
             Layout::new(
-                Direction::Horizontal,
+                preview_direction,
                 [Constraint::Percentage(50), Constraint::Percentage(50)],
             )
             .split(f.size())
         } else {
+            picker_pane = 0;
+            preview_pane = 1;
+            preview_direction = Direction::Horizontal;
             [f.size()].into()
         };
 
         let layout = Layout::new(
             Direction::Vertical,
             [
-                Constraint::Length(f.size().height - 1),
+                Constraint::Length(preview_split[picker_pane].height - 1),
                 Constraint::Length(1),
             ],
         )
-        .split(horizontal_split[0]);
+        .split(preview_split[picker_pane]);
 
         self.matcher.tick(10);
         let snapshot = self.matcher.snapshot();
@@ -177,10 +202,30 @@ impl Picker {
             self.selection.select(Some(0));
         }
 
-        let selected_style = Style::default()
+        let mut selected_style = Style::default()
             .bg(Color::LightBlue)
             .fg(Color::Black)
             .bold();
+        let mut border_color = Color::DarkGray;
+        let mut info_color = Color::LightYellow;
+        let mut prompt_color = Color::LightGreen;
+
+        if let Some(colors) = &self.colors {
+            selected_style = colors.highlight_style().bold();
+
+            if let Some(color) = colors.border_color() {
+                border_color = color;
+            }
+
+            if let Some(color) = colors.info_color() {
+                info_color = color;
+            }
+
+            if let Some(color) = colors.prompt_color() {
+                prompt_color = color;
+            }
+        }
+
         let table = List::new(matches)
             .highlight_style(selected_style)
             .direction(ListDirection::BottomToTop)
@@ -189,8 +234,8 @@ impl Picker {
             .block(
                 Block::default()
                     .borders(Borders::BOTTOM)
-                    .border_style(Style::default().fg(Color::DarkGray))
-                    .title_style(Style::default().fg(Color::LightYellow))
+                    .border_style(Style::default().fg(border_color))
+                    .title_style(Style::default().fg(info_color))
                     .title_position(Position::Bottom)
                     .title(format!(
                         "{}/{}",
@@ -200,7 +245,7 @@ impl Picker {
             );
         f.render_stateful_widget(table, layout[0], &mut self.selection);
 
-        let prompt = Span::styled("> ", Style::default().fg(Color::LightGreen));
+        let prompt = Span::styled("> ", Style::default().fg(prompt_color));
         let input_text = Span::raw(&self.filter);
         let input_line = Line::from(vec![prompt, input_text]);
         let input = Paragraph::new(vec![input_line]);
@@ -208,32 +253,56 @@ impl Picker {
         f.set_cursor(layout[1].x + self.cursor_pos + 2, layout[1].y);
 
         if let Some(command) = &self.preview_command {
-            let text = if let Some(index) = self.selection.selected() {
-                if let Some(item) = snapshot.get_matched_item(index as u32) {
-                    let command = command.replace("{}", item.data);
-                    let output = execute_tmux_command(&command);
+            self.render_preview(
+                command,
+                snapshot,
+                f,
+                &border_color,
+                &preview_direction,
+                preview_split[preview_pane],
+            );
+        }
+    }
 
-                    if output.status.success() {
-                        String::from_utf8(output.stdout).unwrap()
-                    } else {
-                        "".to_string()
-                    }
+    fn render_preview(
+        &self,
+        command: &str,
+        snapshot: &Snapshot<String>,
+        f: &mut Frame,
+        border_color: &Color,
+        direction: &Direction,
+        rect: Rect,
+    ) {
+        let text = if let Some(index) = self.selection.selected() {
+            if let Some(item) = snapshot.get_matched_item(index as u32) {
+                let command = command.replace("{}", item.data);
+                let output = execute_tmux_command(&command);
+
+                if output.status.success() {
+                    String::from_utf8(output.stdout).unwrap()
                 } else {
                     "".to_string()
                 }
             } else {
                 "".to_string()
-            };
-            let text = str_to_text(&text, (horizontal_split[1].width - 1).into());
-            let preview = Paragraph::new(text)
-                .block(
-                    Block::default()
-                        .borders(Borders::LEFT)
-                        .border_style(Style::default().fg(Color::DarkGray)),
-                )
-                .wrap(Wrap { trim: false });
-            f.render_widget(preview, horizontal_split[1]);
-        }
+            }
+        } else {
+            "".to_string()
+        };
+        let text = str_to_text(&text, (rect.width - 1).into());
+        let border_position = if *direction == Direction::Horizontal {
+            Borders::LEFT
+        } else {
+            Borders::BOTTOM
+        };
+        let preview = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(border_position)
+                    .border_style(Style::default().fg(*border_color)),
+            )
+            .wrap(Wrap { trim: false });
+        f.render_widget(preview, rect);
     }
 
     fn get_selected(&self) -> Option<String> {
@@ -394,7 +463,6 @@ fn str_to_text(s: &str, max: usize) -> Text {
 
     for l in s.lines() {
         let mut line = Line::default();
-        tspan.clear();
         ansi_state = false;
 
         for (i, ch) in l.chars().enumerate() {
@@ -410,9 +478,11 @@ fn str_to_text(s: &str, max: usize) -> Text {
                 } else {
                     tspan.push(ch);
 
-                    if i == max.min(l.len() - 1) {
+                    if (line.width() + tspan.chars().count()) == max || i == (l.chars().count() - 1)
+                    {
                         let span = Span::styled(tspan.clone(), style);
                         line.spans.push(span);
+                        tspan.clear();
                         break;
                     }
                 }
