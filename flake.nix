@@ -40,6 +40,7 @@
         };
         devShells.default = pkgs.mkShell {
           name = "rust devShell";
+          OPENSSL_NO_VENDOR = 1;
           buildInputs = with pkgs;
           with pkgs.rustPlatform; [
             cargo
@@ -59,6 +60,7 @@
             cargoDeps = final.rustPlatform.importCargoLock {
               lockFile = self + "/Cargo.lock";
             };
+            OPENSSL_NO_VENDOR = 1;
           });
         };
 
