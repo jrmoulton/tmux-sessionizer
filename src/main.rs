@@ -110,34 +110,41 @@ fn main() -> Result<(), TmsError> {
         repo_name
     };
 
-    // Get the tmux sessions
-    let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
-        .expect("The tmux command static string should always be valid utf-8");
-    let mut sessions = sessions.lines();
-
-    // If the session already exists switch to it, else create the new session and then switch
-    let session_previously_existed = sessions.any(|line| {
-        // tmux will return the output with extra ' and \n characters
-        line.to_owned().retain(|char| char != '\'' && char != '\n');
-        line == repo_short_name
-    });
-    if !session_previously_existed {
+    if !session_exists(&repo_short_name) {
         execute_tmux_command(&format!(
             "tmux new-session -ds {repo_short_name } -c {path}",
         ));
         set_up_tmux_env(found_repo, &repo_short_name)?;
     }
 
+    switch_to_session(&repo_short_name);
+
+    Ok(())
+}
+
+pub(crate) fn switch_to_session(repo_short_name: &str) {
     if !is_in_tmux_session() {
         execute_tmux_command(&format!("tmux attach -t {repo_short_name}"));
-        return Ok(());
+    } else {
+        let result = execute_tmux_command(&format!("tmux switch-client -t {repo_short_name}"));
+        if !result.status.success() {
+            execute_tmux_command(&format!("tmux attach -t {repo_short_name}"));
+        }
     }
+}
 
-    let result = execute_tmux_command(&format!("tmux switch-client -t {repo_short_name}"));
-    if !result.status.success() {
-        execute_tmux_command(&format!("tmux attach -t {repo_short_name}"));
-    }
-    Ok(())
+pub(crate) fn session_exists(repo_short_name: &str) -> bool {
+    // Get the tmux sessions
+    let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
+        .expect("The tmux command static string should always be valid utf-8");
+    let mut sessions = sessions.lines();
+
+    // If the session already exists switch to it, else create the new session and then switch
+    sessions.any(|line| {
+        // tmux will return the output with extra ' and \n characters
+        line.to_owned().retain(|char| char != '\'' && char != '\n');
+        line == repo_short_name
+    })
 }
 
 pub(crate) fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), TmsError> {

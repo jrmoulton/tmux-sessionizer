@@ -4,7 +4,8 @@ use crate::{
     configs::SearchDirectory,
     configs::{Config, SessionSortOrderConfig},
     dirty_paths::DirtyUtf8Path,
-    execute_command, execute_tmux_command, get_single_selection, TmsError,
+    execute_command, execute_tmux_command, get_single_selection, session_exists, set_up_tmux_env,
+    switch_to_session, TmsError,
 };
 use clap::{Args, Parser, Subcommand};
 use error_stack::{Result, ResultExt};
@@ -38,6 +39,8 @@ pub enum CliCommand {
     Rename(RenameCommand),
     /// Creates new worktree windows for the selected session
     Refresh(RefreshCommand),
+    /// Clone repository into the first search path and create a new session for it
+    CloneRepo(CloneRepoCommand),
 }
 
 #[derive(Debug, Args)]
@@ -99,6 +102,12 @@ pub struct RefreshCommand {
     name: Option<String>,
 }
 
+#[derive(Debug, Args)]
+pub struct CloneRepoCommand {
+    /// Git repository to clone
+    repository: String,
+}
+
 impl Cli {
     pub(crate) fn handle_sub_commands(&self) -> Result<SubCommandGiven, TmsError> {
         // Get the configuration from the config file
@@ -147,6 +156,12 @@ impl Cli {
                 refresh_command(args)?;
                 Ok(SubCommandGiven::Yes)
             }
+
+            Some(CliCommand::CloneRepo(args)) => {
+                clone_repo_command(args, config)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
             None => Ok(SubCommandGiven::No(config.into())),
         }
     }
@@ -557,6 +572,52 @@ fn refresh_command(args: &RefreshCommand) -> Result<(), TmsError> {
             }
         }
     }
+
+    Ok(())
+}
+
+fn clone_repo_command(args: &CloneRepoCommand, config: Config) -> Result<(), TmsError> {
+    let search_dirs = config
+        .search_dirs
+        .ok_or(TmsError::ConfigError)
+        .attach_printable("No search path configured")?;
+    let mut path = search_dirs
+        .first()
+        .ok_or(TmsError::ConfigError)
+        .attach_printable("No search path configured")?
+        .path
+        .clone();
+
+    let (_, repo_name) = args
+        .repository
+        .rsplit_once('/')
+        .expect("Repository path contains '/'");
+    let repo_name = repo_name.trim_end_matches(".git");
+    path.push(repo_name);
+
+    let repo = Repository::clone(&args.repository, &path).change_context(TmsError::GitError)?;
+
+    let mut session_name = repo_name.to_string();
+
+    if session_exists(&session_name) {
+        session_name = format!(
+            "{}/{}",
+            path.parent()
+                .unwrap()
+                .file_name()
+                .expect("The file name doesn't end in `..`")
+                .to_string()?,
+            session_name
+        );
+    }
+
+    execute_tmux_command(&format!(
+        "tmux new-session -ds {} -c {}",
+        session_name,
+        path.display()
+    ));
+    set_up_tmux_env(&repo, &session_name)?;
+    switch_to_session(&session_name);
 
     Ok(())
 }
