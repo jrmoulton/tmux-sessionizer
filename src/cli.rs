@@ -385,21 +385,33 @@ fn kill_subcommand(config: Config) -> Result<(), TmsError> {
             .expect("The tmux command static string should always be valid utf-9");
     current_session.retain(|x| x != '\'' && x != '\n');
 
-    let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
+    let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F '#{?session_attached,,#{session_name}#,#{session_last_attached}}").stdout)
         .expect("The tmux command static string should always be valid utf-9");
-    let sessions: Vec<&str> = sessions.lines().collect();
+    let cleaned = sessions.replace('\'', "").replace("\n\n", "\n");
+    let mut sessions: Vec<(&str, &str)> = cleaned
+        .trim()
+        .split('\n')
+        .filter_map(|s| s.split_once(','))
+        .collect();
+
+    if let Some(SessionSortOrderConfig::LastAttached) = config.session_sort_order {
+        sessions.sort_by(|a, b| b.1.cmp(a.1));
+    }
 
     let to_session = if config.default_session.is_some()
-        && sessions.contains(&config.default_session.as_deref().unwrap())
+        && sessions
+            .iter()
+            .find(|session| session.0 == config.default_session.as_deref().unwrap())
+            .is_some()
         && current_session != config.default_session.as_deref().unwrap()
     {
-        config.default_session.as_deref().unwrap()
-    } else if current_session != sessions[0] {
-        sessions[0]
+        config.default_session.as_deref()
     } else {
-        sessions.get(1).unwrap_or_else(|| &sessions[0])
+        sessions.first().map(|s| s.0)
     };
-    execute_tmux_command(&format!("tmux switch-client -t {to_session}"));
+    if let Some(to_session) = to_session {
+        execute_tmux_command(&format!("tmux switch-client -t {to_session}"));
+    }
     execute_tmux_command(&format!("tmux kill-session -t {current_session}"));
 
     Ok(())
