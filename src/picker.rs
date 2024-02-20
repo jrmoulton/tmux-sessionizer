@@ -106,11 +106,6 @@ impl Picker {
                                 return Ok(Some(selected));
                             }
                         }
-                        KeyCode::Char('j') if key.modifiers == KeyModifiers::CONTROL => {
-                            if let Some(selected) = self.get_selected() {
-                                return Ok(Some(selected));
-                            }
-                        }
                         KeyCode::Delete => self.delete(),
                         KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
                             self.delete()
@@ -121,15 +116,18 @@ impl Picker {
                         KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
                             self.delete_to_line(false)
                         }
-                        KeyCode::Char('k') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.delete_to_line(true)
-                        }
                         KeyCode::Up => self.move_up(),
                         KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
                             self.move_up()
                         }
+                        KeyCode::Char('k') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.move_up()
+                        }
                         KeyCode::Down => self.move_down(),
                         KeyCode::Char('n') if key.modifiers == KeyModifiers::CONTROL => {
+                            self.move_down()
+                        }
+                        KeyCode::Char('j') if key.modifiers == KeyModifiers::CONTROL => {
                             self.move_down()
                         }
                         KeyCode::Char('a') if key.modifiers == KeyModifiers::CONTROL => {
