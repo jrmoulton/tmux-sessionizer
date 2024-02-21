@@ -44,12 +44,14 @@
           buildInputs = with pkgs;
           with pkgs.rustPlatform; [
             cargo
+            clippy
             rustc
             rustfmt
             rust-analyzer
             openssl
             pkg-config
-          ];
+          ]
+          ++ lib.optionals stdenv.isDarwin [ libgit2 ];
         };
       };
       flake = {

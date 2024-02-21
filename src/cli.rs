@@ -235,6 +235,7 @@ fn switch_command(config: Config) -> Result<(), TmsError> {
         &sessions,
         Some("tmux capture-pane -ept {}".to_string()),
         config.picker_colors,
+        config.shortcuts,
     )? {
         execute_tmux_command(&format!(
             "tmux switch-client -t {}",
@@ -261,6 +262,7 @@ fn windows_command(config: Config) -> Result<(), TmsError> {
         &windows,
         Some("tmux capture-pane -ept {}".to_string()),
         config.picker_colors,
+        config.shortcuts,
     )? {
         execute_tmux_command(&format!(
             "tmux select-window -t {}",
