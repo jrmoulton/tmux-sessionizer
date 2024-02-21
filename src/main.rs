@@ -42,7 +42,23 @@ fn main() -> Result<(), TmsError> {
         SubCommandGiven::No(config) => config, // continue
     };
 
-    let mut search_dirs = config.search_dirs.unwrap_or(Vec::new());
+    let mut search_dirs: Vec<_> = config
+        .search_dirs
+        .unwrap_or(Vec::new())
+        .into_iter()
+        .map(|mut search_dir| {
+            let expanded_path = shellexpand::full(&search_dir.path.to_string_lossy())
+                .change_context(TmsError::IoError)
+                .unwrap()
+                .to_string();
+
+            search_dir.path = canonicalize(expanded_path)
+                .change_context(TmsError::IoError)
+                .unwrap();
+
+            search_dir
+        })
+        .collect();
 
     // merge old search paths with new search directories
     if let Some(search_paths) = config.search_paths {
