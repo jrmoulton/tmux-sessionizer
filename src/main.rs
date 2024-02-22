@@ -116,20 +116,18 @@ fn main() -> Result<(), TmsError> {
             .change_context(TmsError::IoError)?
             .to_string()?
     };
-    let repo_short_name = if config.display_full_path == Some(true) {
+    let repo_short_name = (if config.display_full_path == Some(true) {
         std::path::PathBuf::from(&repo_name)
             .file_name()
             .expect("None of the paths here should terminate in `..`")
             .to_string()?
-            .replace('.', "_")
     } else {
         repo_name
-    };
+    })
+    .replace('.', "_");
 
     if !session_exists(&repo_short_name) {
-        execute_tmux_command(&format!(
-            "tmux new-session -ds {repo_short_name } -c {path}",
-        ));
+        execute_tmux_command(&format!("tmux new-session -ds {repo_short_name} -c {path}",));
         set_up_tmux_env(found_repo, &repo_short_name)?;
     }
 
