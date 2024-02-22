@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind},
     execute,
     style::Colored,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -25,7 +25,12 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::{configs::PickerColorConfig, execute_tmux_command, TmsError};
+use crate::{
+    configs::PickerColorConfig,
+    execute_tmux_command,
+    keymap::{default_keymap, Keymap, PickerAction},
+    TmsError,
+};
 
 pub struct Picker {
     matcher: Nucleo<String>,
@@ -36,16 +41,25 @@ pub struct Picker {
     selection: ListState,
     filter: String,
     cursor_pos: u16,
+    keymap: Keymap,
 }
 
 impl Picker {
-    pub fn new(list: &[String], preview_command: Option<String>) -> Self {
+    pub fn new(list: &[String], preview_command: Option<String>, keymap: Option<Keymap>) -> Self {
         let matcher = Nucleo::new(nucleo::Config::DEFAULT, Arc::new(request_redraw), None, 1);
 
         let injector = matcher.injector();
 
         for str in list {
             injector.push(str.to_owned(), |dst| dst[0] = str.to_owned().into());
+        }
+
+        let mut default_keymap = default_keymap();
+
+        if let Some(keymap) = keymap {
+            keymap.iter().for_each(|(event, action)| {
+                default_keymap.insert(*event, *action);
+            })
         }
 
         Picker {
@@ -55,6 +69,7 @@ impl Picker {
             selection: ListState::default(),
             filter: String::default(),
             cursor_pos: 0,
+            keymap: default_keymap,
         }
     }
 
@@ -96,51 +111,30 @@ impl Picker {
 
             if let Event::Key(key) = event::read().map_err(|e| TmsError::TuiError(e.to_string()))? {
                 if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Esc => return Ok(None),
-                        KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
-                            return Ok(None)
-                        }
-                        KeyCode::Enter => {
+                    match self.keymap.get(&key.into()) {
+                        Some(PickerAction::Cancel) => return Ok(None),
+                        Some(PickerAction::Confirm) => {
                             if let Some(selected) = self.get_selected() {
                                 return Ok(Some(selected));
                             }
                         }
-                        KeyCode::Delete => self.delete(),
-                        KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.delete()
+                        Some(PickerAction::Backspace) => self.remove_filter(),
+                        Some(PickerAction::Delete) => self.delete(),
+                        Some(PickerAction::DeleteWord) => self.delete_word(),
+                        Some(PickerAction::DeleteToLineStart) => self.delete_to_line(false),
+                        Some(PickerAction::DeleteToLineEnd) => self.delete_to_line(true),
+                        Some(PickerAction::MoveUp) => self.move_up(),
+                        Some(PickerAction::MoveDown) => self.move_down(),
+                        Some(PickerAction::CursorLeft) => self.move_cursor_left(),
+                        Some(PickerAction::CursorRight) => self.move_cursor_right(),
+                        Some(PickerAction::MoveToLineStart) => self.move_to_start(),
+                        Some(PickerAction::MoveToLineEnd) => self.move_to_end(),
+                        Some(PickerAction::Noop) => {}
+                        None => {
+                            if let KeyCode::Char(c) = key.code {
+                                self.update_filter(c)
+                            }
                         }
-                        KeyCode::Char('w') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.delete_word()
-                        }
-                        KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.delete_to_line(false)
-                        }
-                        KeyCode::Up => self.move_up(),
-                        KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.move_up()
-                        }
-                        KeyCode::Char('k') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.move_up()
-                        }
-                        KeyCode::Down => self.move_down(),
-                        KeyCode::Char('n') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.move_down()
-                        }
-                        KeyCode::Char('j') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.move_down()
-                        }
-                        KeyCode::Char('a') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.move_to_start()
-                        }
-                        KeyCode::Char('e') if key.modifiers == KeyModifiers::CONTROL => {
-                            self.move_to_end()
-                        }
-                        KeyCode::Left => self.move_cursor_left(),
-                        KeyCode::Right => self.move_cursor_right(),
-                        KeyCode::Char(c) => self.update_filter(c),
-                        KeyCode::Backspace => self.remove_filter(),
-                        _ => {}
                     }
                 }
             }

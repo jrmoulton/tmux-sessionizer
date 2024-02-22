@@ -1,11 +1,11 @@
 use clap::ValueEnum;
 use error_stack::{Result, ResultExt};
+use serde_derive::{Deserialize, Serialize};
 use std::{env, fmt::Display, io::Write, path::PathBuf};
 
 use ratatui::style::{Color, Style};
-use serde_derive::{Deserialize, Serialize};
 
-use crate::Suggestion;
+use crate::{keymap::Keymap, Suggestion};
 
 #[derive(Debug)]
 pub(crate) enum ConfigError {
@@ -40,6 +40,7 @@ pub struct Config {
     pub search_dirs: Option<Vec<SearchDirectory>>,
     pub sessions: Option<Vec<Session>>,
     pub picker_colors: Option<PickerColorConfig>,
+    pub shortcuts: Option<Keymap>,
 }
 
 impl Config {

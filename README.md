@@ -137,6 +137,30 @@ Windows: C:\Users\Alice\AppData\Roaming\tms\config.toml
 ```
 If the config directory can't be found, it will also check `~/.config/tms/config.toml` (only relevant on Windows and macOS). Alternatively, you can specify a custom config location by setting the `TMS_CONFIG_FILE` environment variable in your shell profile with your desired config path.
 
+#### Customizing keyboard shortcuts
+
+Keyboard shortcuts can be customized by adding a `[shortcuts]` section in the config file and adding bindings as pairs of `shortcut = action`, for example:
+```
+[shortcuts]
+"ctrl-k" = "delete_to_line_end"
+```
+
+Available actions are:
+ - "" (to remove a default binding)
+ - "cancel"
+ - "confirm"
+ - "backspace"
+ - "delete"
+ - "move_up"
+ - "move_down"
+ - "cursor_left"
+ - "cursor_right"
+ - "delete_word"
+ - "delete_to_line_start"
+ - "delete_to_line_end"
+ - "move_to_line_start"
+ - "move_to_line_end"
+
 ## Installation
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/tmux-sessionizer.svg)](https://repology.org/project/tmux-sessionizer/versions)
