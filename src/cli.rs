@@ -401,8 +401,7 @@ fn kill_subcommand(config: Config) -> Result<(), TmsError> {
     let to_session = if config.default_session.is_some()
         && sessions
             .iter()
-            .find(|session| session.0 == config.default_session.as_deref().unwrap())
-            .is_some()
+            .any(|session| session.0 == config.default_session.as_deref().unwrap())
         && current_session != config.default_session.as_deref().unwrap()
     {
         config.default_session.as_deref()
