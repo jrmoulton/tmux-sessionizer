@@ -538,9 +538,9 @@ dependencies = [
 
 [[package]]
 name = "nucleo"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9c28316df514918915799651c5a1cc8f1dd33a9294e1cc22f27fd19453fd62c"
+checksum = "7eee5490d254bf40930ff213259a507242df1014a8aeea9ebced2906cab4f44e"
 dependencies = [
  "nucleo-matcher",
  "parking_lot",
@@ -549,9 +549,9 @@ dependencies = [
 
 [[package]]
 name = "nucleo-matcher"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25040628aa03c6c5e99690990b2493f5a8043e9144ad9a68c933fe4f82f2654d"
+checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
 dependencies = [
  "memchr",
  "unicode-segmentation",
