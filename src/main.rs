@@ -11,14 +11,12 @@ use crate::{
     repos::{find_repos, RepoContainer},
 };
 use clap::Parser;
-use configs::SearchDirectory;
-use configs::{ConfigError, PickerColorConfig};
+use configs::PickerColorConfig;
 use error_stack::{Report, Result, ResultExt};
 use git2::Repository;
 
 use keymap::Keymap;
 use picker::Picker;
-use std::fs::canonicalize;
 use std::{error::Error, fmt::Display, process};
 
 fn main() -> Result<(), TmsError> {
@@ -36,54 +34,9 @@ fn main() -> Result<(), TmsError> {
         SubCommandGiven::No(config) => config, // continue
     };
 
-    let mut search_dirs: Vec<_> = config
-        .search_dirs
-        .unwrap_or(Vec::new())
-        .into_iter()
-        .map(|mut search_dir| {
-            let expanded_path = shellexpand::full(&search_dir.path.to_string_lossy())
-                .change_context(TmsError::IoError)
-                .unwrap()
-                .to_string();
-
-            search_dir.path = canonicalize(expanded_path)
-                .change_context(TmsError::IoError)
-                .unwrap();
-
-            search_dir
-        })
-        .collect();
-
-    // merge old search paths with new search directories
-    if let Some(search_paths) = config.search_paths {
-        if !search_paths.is_empty() {
-            search_dirs.extend(search_paths.into_iter().map(|path| {
-                SearchDirectory::new(
-                    canonicalize(
-                        shellexpand::full(&path)
-                            .change_context(TmsError::IoError)
-                            .unwrap()
-                            .to_string(),
-                    )
-                    .change_context(TmsError::IoError)
-                    .unwrap(),
-                    10,
-                )
-            }));
-        }
-    }
-
-    if search_dirs.is_empty() {
-        return Err(ConfigError::NoDefaultSearchPath)
-            .attach_printable(
-                "You must configure at least one default search path with the `config` subcommand. E.g `tms config` ",
-            )
-            .change_context(TmsError::ConfigError);
-    }
-
     // Find repositories and present them with the fuzzy finder
     let repos = find_repos(
-        search_dirs,
+        config.search_dirs()?,
         config.excluded_dirs,
         config.display_full_path,
         config.search_submodules,
