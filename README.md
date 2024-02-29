@@ -110,6 +110,8 @@ Options:
           Also show initialized submodules [possible values: true, false]
       --recursive-submodules <true | false>
           Search submodules for submodules [possible values: true, false]
+      --switch-filter-unknown <true | false>
+          Only include sessions from search paths in the switcher [possible values: true, false]
   -d, --max-depths <max depth>...
           The maximum depth to traverse when searching for repositories in search paths, length should match the number of search paths if specified (defaults to 10)
       --picker-highlight-color <#rrggbb>
