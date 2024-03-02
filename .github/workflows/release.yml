@@ -120,6 +120,15 @@ jobs:
       - name: Install dependencies
         run: |
           ${{ matrix.packages_install }}
+      - name: Get version
+        run: echo "VERSION=$(git describe --abbrev=0 --tags)" >> $GITHUB_ENV
+      - name: Ensure version in Cargo.toml is correct
+        if: startsWith(github.ref, 'refs/tags/')
+        # Fails if the version does not match
+        run: grep -q "name = \"tmux-sessionizer\"\nversion = \"${VERSION//v}\"" Cargo.toml
+      - name: Ensure Cargo.lock is up to date
+        # Fails if lockfile needs to be updated
+        run: cargo generate-lockfile --frozen
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot
