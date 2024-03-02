@@ -4,6 +4,7 @@ mod dirty_paths;
 mod keymap;
 mod picker;
 mod repos;
+mod tmux;
 
 use crate::{
     cli::{Cli, SubCommandGiven},
@@ -17,7 +18,7 @@ use error_stack::{Report, Result, ResultExt};
 use git2::{Repository, Submodule};
 
 use keymap::Keymap;
-use picker::Picker;
+use picker::{Picker, Preview};
 use repos::RepoContainer;
 use std::fs::canonicalize;
 use std::{
@@ -28,6 +29,7 @@ use std::{
     path::Path,
     process,
 };
+use tmux::Tmux;
 
 fn main() -> Result<(), TmsError> {
     // Install debug hooks for formatting of error handling
@@ -39,7 +41,10 @@ fn main() -> Result<(), TmsError> {
 
     // Use CLAP to parse the command line arguments
     let cli_args = Cli::parse();
-    let config = match cli_args.handle_sub_commands()? {
+
+    let tmux = Tmux::default();
+
+    let config = match cli_args.handle_sub_commands(&tmux)? {
         SubCommandGiven::Yes => return Ok(()),
         SubCommandGiven::No(config) => config, // continue
     };
@@ -98,9 +103,13 @@ fn main() -> Result<(), TmsError> {
         config.recursive_submodules,
     )?;
 
-    let repo_name = if let Some(str) =
-        get_single_selection(&repos.list(), None, config.picker_colors, config.shortcuts)?
-    {
+    let repo_name = if let Some(str) = get_single_selection(
+        &repos.list(),
+        Preview::None,
+        config.picker_colors,
+        config.shortcuts,
+        tmux.clone(),
+    )? {
         str
     } else {
         return Ok(());
@@ -129,42 +138,44 @@ fn main() -> Result<(), TmsError> {
     })
     .replace('.', "_");
 
-    if !session_exists(&repo_short_name) {
-        execute_tmux_command(&format!("tmux new-session -ds {repo_short_name} -c {path}",));
-        set_up_tmux_env(found_repo, &repo_short_name)?;
+    if !session_exists(&repo_short_name, &tmux) {
+        tmux.new_session(Some(&repo_short_name), Some(&path));
+        set_up_tmux_env(found_repo, &repo_short_name, &tmux)?;
     }
 
-    switch_to_session(&repo_short_name);
+    switch_to_session(&repo_short_name, &tmux);
 
     Ok(())
 }
 
-pub(crate) fn switch_to_session(repo_short_name: &str) {
+pub(crate) fn switch_to_session(repo_short_name: &str, tmux: &Tmux) {
     if !is_in_tmux_session() {
-        execute_tmux_command(&format!("tmux attach -t {repo_short_name}"));
+        tmux.attach_session(Some(repo_short_name), None);
     } else {
-        let result = execute_tmux_command(&format!("tmux switch-client -t {repo_short_name}"));
+        let result = tmux.switch_client(repo_short_name);
         if !result.status.success() {
-            execute_tmux_command(&format!("tmux attach -t {repo_short_name}"));
+            tmux.attach_session(Some(repo_short_name), None);
         }
     }
 }
 
-pub(crate) fn session_exists(repo_short_name: &str) -> bool {
+pub(crate) fn session_exists(repo_short_name: &str, tmux: &Tmux) -> bool {
     // Get the tmux sessions
-    let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
-        .expect("The tmux command static string should always be valid utf-8");
-    let mut sessions = sessions.lines();
+    let sessions = tmux.list_sessions("'#S'");
 
     // If the session already exists switch to it, else create the new session and then switch
-    sessions.any(|line| {
+    sessions.lines().any(|line| {
         // tmux will return the output with extra ' and \n characters
         line.to_owned().retain(|char| char != '\'' && char != '\n');
         line == repo_short_name
     })
 }
 
-pub(crate) fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), TmsError> {
+pub(crate) fn set_up_tmux_env(
+    repo: &Repository,
+    repo_name: &str,
+    tmux: &Tmux,
+) -> Result<(), TmsError> {
     if repo.is_bare() {
         if repo
             .worktrees()
@@ -197,12 +208,10 @@ pub(crate) fn set_up_tmux_env(repo: &Repository, repo_name: &str) -> Result<(), 
                 .path()
                 .to_string()?;
 
-            execute_tmux_command(&format!(
-                "tmux new-window -t {repo_name} -n {window_name} -c {path_to_tree}"
-            ));
+            tmux.new_window(Some(&window_name), Some(&path_to_tree), Some(repo_name));
         }
         // Kill that first extra window
-        execute_tmux_command(&format!("tmux kill-window -t {repo_name}:^"));
+        tmux.kill_window(&format!("{repo_name}:^"));
     } else {
         // Extra stuff?? I removed launching python environments here but that could be exposed in the configuration
     }
@@ -217,26 +226,18 @@ pub fn execute_command(command: &str, args: Vec<String>) -> process::Output {
         .unwrap_or_else(|_| panic!("Failed to execute command `{command}`"))
 }
 
-pub fn execute_tmux_command(command: &str) -> process::Output {
-    let args: Vec<&str> = command.split(' ').skip(1).collect();
-    process::Command::new("tmux")
-        .args(args)
-        .stdin(process::Stdio::inherit())
-        .output()
-        .unwrap_or_else(|_| panic!("Failed to execute the tmux command `{command}`"))
-}
-
 fn is_in_tmux_session() -> bool {
     std::env::var("TERM_PROGRAM").is_ok_and(|program| program == "tmux")
 }
 
 fn get_single_selection(
     list: &[String],
-    preview_command: Option<String>,
+    preview: Preview,
     colors: Option<PickerColorConfig>,
     keymap: Option<Keymap>,
+    tmux: Tmux,
 ) -> Result<Option<String>, TmsError> {
-    let mut picker = Picker::new(list, preview_command, keymap).set_colors(colors);
+    let mut picker = Picker::new(list, preview, keymap, tmux).set_colors(colors);
 
     Ok(picker.run()?)
 }
@@ -373,7 +374,7 @@ impl Display for Suggestion {
 }
 
 #[derive(Debug)]
-pub(crate) enum TmsError {
+pub enum TmsError {
     GitError,
     NonUtf8Path,
     TuiError(String),

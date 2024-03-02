@@ -4,8 +4,11 @@ use crate::{
     configs::SearchDirectory,
     configs::{Config, SessionSortOrderConfig},
     dirty_paths::DirtyUtf8Path,
-    execute_command, execute_tmux_command, get_single_selection, session_exists, set_up_tmux_env,
-    switch_to_session, TmsError,
+    execute_command, get_single_selection,
+    picker::Preview,
+    session_exists, set_up_tmux_env, switch_to_session,
+    tmux::Tmux,
+    TmsError,
 };
 use clap::{Args, Parser, Subcommand};
 use error_stack::{Result, ResultExt};
@@ -109,22 +112,23 @@ pub struct CloneRepoCommand {
 }
 
 impl Cli {
-    pub(crate) fn handle_sub_commands(&self) -> Result<SubCommandGiven, TmsError> {
+    pub(crate) fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven, TmsError> {
         // Get the configuration from the config file
         let config = Config::new().change_context(TmsError::ConfigError)?;
+
         match &self.command {
             Some(CliCommand::Start) => {
-                start_command(config)?;
+                start_command(config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
             Some(CliCommand::Switch) => {
-                switch_command(config)?;
+                switch_command(config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
             Some(CliCommand::Windows) => {
-                windows_command(config)?;
+                windows_command(config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
             // Handle the config subcommand
@@ -135,30 +139,30 @@ impl Cli {
 
             // The kill subcommand will kill the current session and switch to another one
             Some(CliCommand::Kill) => {
-                kill_subcommand(config)?;
+                kill_subcommand(config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
             // The sessions subcommand will print the sessions with an asterisk over the current
             // session
             Some(CliCommand::Sessions) => {
-                sessions_subcommand()?;
+                sessions_subcommand(tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
             // Rename the active session and the working directory
             // rename
             Some(CliCommand::Rename(args)) => {
-                rename_subcommand(args)?;
+                rename_subcommand(args, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
             Some(CliCommand::Refresh(args)) => {
-                refresh_command(args)?;
+                refresh_command(args, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
             Some(CliCommand::CloneRepo(args)) => {
-                clone_repo_command(args, config)?;
+                clone_repo_command(args, config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
@@ -167,59 +171,51 @@ impl Cli {
     }
 }
 
-fn start_command(config: Config) -> Result<(), TmsError> {
+fn start_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
     if let Some(sessions) = &config.sessions {
         for session in sessions {
-            let mut sesssion_start_string = String::from("tmux new-session -d");
-            if let Some(session_name) = &session.name {
-                sesssion_start_string.push_str(&format!(" -s {session_name}"));
-            }
-            if let Some(session_path) = &session.path {
-                sesssion_start_string.push_str(&format!(
-                    " -c {}",
-                    shellexpand::full(&session_path).change_context(TmsError::IoError)?
-                ))
-            }
-            execute_tmux_command(&sesssion_start_string);
-            drop(sesssion_start_string); // just to be clear that this string is done
+            let session_path = session
+                .path
+                .as_ref()
+                .map(shellexpand::full)
+                .transpose()
+                .change_context(TmsError::IoError)?;
+
+            tmux.new_session(session.name.as_deref(), session_path.as_deref());
+
             if let Some(windows) = &session.windows {
                 for window in windows {
-                    let mut window_start_string = String::from("tmux new-window");
-                    if let Some(window_name) = &window.name {
-                        window_start_string.push_str(&format!(" -n {window_name}"));
-                    }
-                    if let Some(window_path) = &window.path {
-                        window_start_string.push_str(&format!(
-                            " -c {}",
-                            shellexpand::full(&window_path).change_context(TmsError::IoError)?
-                        ));
-                    }
-                    execute_tmux_command(&window_start_string);
+                    let window_path = window
+                        .path
+                        .as_ref()
+                        .map(shellexpand::full)
+                        .transpose()
+                        .change_context(TmsError::IoError)?;
+
+                    tmux.new_window(window.name.as_deref(), window_path.as_deref(), None);
+
                     if let Some(window_command) = &window.command {
-                        execute_tmux_command(&format!("tmux send-keys {window_command} Enter"));
+                        tmux.send_keys(window_command, None);
                     }
                 }
-                execute_tmux_command("tmux kill-window -t :1");
+                tmux.kill_window(":1");
             }
         }
-        execute_tmux_command("tmux attach");
+        tmux.attach_session(None, None);
     } else {
-        execute_tmux_command("tmux");
+        tmux.tmux();
     }
 
     Ok(())
 }
 
-fn switch_command(config: Config) -> Result<(), TmsError> {
-    let sessions = String::from_utf8(
-        execute_tmux_command(
-            "tmux list-sessions -F '#{?session_attached,,#{session_name}#,#{session_last_attached}}",
-        )
-        .stdout,
-    )
-    .unwrap();
-    let cleaned = sessions.replace('\'', "").replace("\n\n", "\n");
-    let mut sessions: Vec<(&str, &str)> = cleaned
+fn switch_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
+    let sessions = tmux
+        .list_sessions("'#{?session_attached,,#{session_name}#,#{session_last_attached}}'")
+        .replace('\'', "")
+        .replace("\n\n", "\n");
+
+    let mut sessions: Vec<(&str, &str)> = sessions
         .trim()
         .split('\n')
         .filter_map(|s| s.split_once(','))
@@ -233,24 +229,20 @@ fn switch_command(config: Config) -> Result<(), TmsError> {
 
     if let Some(target_session) = get_single_selection(
         &sessions,
-        Some("tmux capture-pane -ept {}".to_string()),
+        Preview::SessionPane,
         config.picker_colors,
         config.shortcuts,
+        tmux.clone(),
     )? {
-        execute_tmux_command(&format!(
-            "tmux switch-client -t {}",
-            target_session.replace('.', "_")
-        ));
+        tmux.switch_client(&target_session.replace('.', "_"));
     }
 
     Ok(())
 }
 
-fn windows_command(config: Config) -> Result<(), TmsError> {
-    let windows = String::from_utf8(
-        execute_tmux_command("tmux list-windows -F '#{?window_attached,,#{window_name}}").stdout,
-    )
-    .unwrap();
+fn windows_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
+    let windows = tmux.list_windows("'#{?window_attached,,#{window_name}}'", None);
+
     let windows: Vec<String> = windows
         .replace('\'', "")
         .replace("\n\n", "\n")
@@ -258,16 +250,15 @@ fn windows_command(config: Config) -> Result<(), TmsError> {
         .split('\n')
         .map(|s| s.to_string())
         .collect();
+
     if let Some(target_window) = get_single_selection(
         &windows,
-        Some("tmux capture-pane -ept {}".to_string()),
+        Preview::SessionPane,
         config.picker_colors,
         config.shortcuts,
+        tmux.clone(),
     )? {
-        execute_tmux_command(&format!(
-            "tmux select-window -t {}",
-            target_window.replace('.', "_")
-        ));
+        tmux.select_window(&target_window.replace('.', "_"));
     }
     Ok(())
 }
@@ -381,16 +372,16 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsErr
     Ok(())
 }
 
-fn kill_subcommand(config: Config) -> Result<(), TmsError> {
-    let mut current_session =
-        String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
-            .expect("The tmux command static string should always be valid utf-9");
+fn kill_subcommand(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
+    let mut current_session = tmux.display_message("'#S'");
     current_session.retain(|x| x != '\'' && x != '\n');
 
-    let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F '#{?session_attached,,#{session_name}#,#{session_last_attached}}").stdout)
-        .expect("The tmux command static string should always be valid utf-9");
-    let cleaned = sessions.replace('\'', "").replace("\n\n", "\n");
-    let mut sessions: Vec<(&str, &str)> = cleaned
+    let sessions = tmux
+        .list_sessions("'#{?session_attached,,#{session_name}#,#{session_last_attached}}'")
+        .replace('\'', "")
+        .replace("\n\n", "\n");
+
+    let mut sessions: Vec<(&str, &str)> = sessions
         .trim()
         .split('\n')
         .filter_map(|s| s.split_once(','))
@@ -411,25 +402,26 @@ fn kill_subcommand(config: Config) -> Result<(), TmsError> {
         sessions.first().map(|s| s.0)
     };
     if let Some(to_session) = to_session {
-        execute_tmux_command(&format!("tmux switch-client -t {to_session}"));
+        tmux.switch_client(to_session);
     }
-    execute_tmux_command(&format!("tmux kill-session -t {current_session}"));
+    tmux.kill_session(&current_session);
 
     Ok(())
 }
 
-fn sessions_subcommand() -> Result<(), TmsError> {
-    let mut current_session =
-        String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout)
-            .expect("The tmux command static string should always be valid utf-9");
+fn sessions_subcommand(tmux: &Tmux) -> Result<(), TmsError> {
+    let mut current_session = tmux.display_message("'#S'");
     current_session.retain(|x| x != '\'' && x != '\n');
     let current_session_star = format!("{current_session}*");
-    let sessions = String::from_utf8(execute_tmux_command("tmux list-sessions -F #S").stdout)
-        .expect("The tmux command static string should always be valid utf-9")
+
+    let sessions = tmux
+        .list_sessions("#S")
         .split('\n')
         .map(String::from)
         .collect::<Vec<String>>();
+
     let mut new_string = String::new();
+
     for session in &sessions {
         if session == &current_session {
             new_string.push_str(&current_session_star);
@@ -440,23 +432,21 @@ fn sessions_subcommand() -> Result<(), TmsError> {
     }
     println!("{new_string}");
     std::thread::sleep(std::time::Duration::from_millis(100));
-    execute_tmux_command("tmux refresh-client -S");
+    tmux.refresh_client();
 
     Ok(())
 }
 
-fn rename_subcommand(args: &RenameCommand) -> Result<(), TmsError> {
+fn rename_subcommand(args: &RenameCommand, tmux: &Tmux) -> Result<(), TmsError> {
     let new_session_name = &args.name;
 
-    let raw_current_session =
-        String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout).unwrap();
+    let current_session = tmux.display_message("'#S'");
+    let current_session = current_session.trim();
 
-    let current_session = raw_current_session.trim();
-    let panes = String::from_utf8(
-                execute_tmux_command("tmux list-panes -s -F '#{window_index}.#{pane_index},#{pane_current_command},#{pane_current_path}'")
-                    .stdout,
-            )
-            .unwrap();
+    let panes = tmux.list_windows(
+        "'#{window_index}.#{pane_index},#{pane_current_command},#{pane_current_path}'",
+        None,
+    );
 
     let mut paneid_to_pane_deatils: HashMap<String, HashMap<String, String>> = HashMap::new();
     let all_panes: Vec<String> = panes
@@ -492,60 +482,34 @@ fn rename_subcommand(args: &RenameCommand) -> Result<(), TmsError> {
         let old_path = &pane_details["cwd"];
         let new_path = old_path.replace(current_session, new_session_name);
 
-        let change_dir_cmd = format!("cd {new_path}");
-        execute_tmux_command(&format!(
-            "tmux send-keys -t {} \"{}\" Enter",
-            pane_index, change_dir_cmd
-        ));
+        let change_dir_cmd = format!("\"cd {new_path}\"");
+        tmux.send_keys(&change_dir_cmd, Some(pane_index));
     }
 
-    execute_tmux_command(&format!("tmux rename-session {}", new_session_name));
-    execute_tmux_command(&format!("tmux attach -c {}", new_session_path));
+    tmux.rename_session(new_session_name);
+    tmux.attach_session(None, Some(&new_session_path));
 
     Ok(())
 }
 
-fn refresh_command(args: &RefreshCommand) -> Result<(), TmsError> {
+fn refresh_command(args: &RefreshCommand, tmux: &Tmux) -> Result<(), TmsError> {
     let session_name = args
         .name
         .clone()
-        .unwrap_or(
-            String::from_utf8(execute_tmux_command("tmux display-message -p '#S'").stdout).unwrap(),
-        )
+        .unwrap_or(tmux.display_message("'#S'"))
         .trim()
         .replace('\'', "");
     // For each window there should be the branch names
-    let session_path =
-        String::from_utf8(execute_tmux_command("tmux display-message -p '#{session_path}'").stdout)
-            .unwrap()
-            .trim()
-            .replace('\'', "");
-    let existing_window_names: Vec<_> = String::from_utf8(
-        execute_tmux_command(&format!(
-            "tmux list-windows -t {session_name} -F '#{{window_name}}'"
-        ))
-        .stdout,
-    )
-    .unwrap()
-    .lines()
-    .map(|line| line.replace('\'', ""))
-    .collect();
-    let create_window = |session_name: &str, path_to_tree: &str, window_name: Option<&str>| {
-        let args: Vec<_> = [
-            Some("new-window"),
-            Some("-t"),
-            Some(session_name),
-            Some("-c"),
-            Some(path_to_tree),
-            window_name.map(|_| "-n"),
-            window_name,
-        ]
-        .iter()
-        .cloned()
-        .filter_map(|f| f.map(String::from))
+    let session_path = tmux
+        .display_message("'#{session_path}'")
+        .trim()
+        .replace('\'', "");
+
+    let existing_window_names: Vec<_> = tmux
+        .list_windows("'#{window_name}'", Some(&session_name))
+        .lines()
+        .map(|line| line.replace('\'', ""))
         .collect();
-        execute_command("tmux", args);
-    };
 
     if let Ok(repository) = Repository::open(&session_path) {
         let mut num_worktree_windows = 0;
@@ -561,27 +525,22 @@ fn refresh_command(args: &RefreshCommand) -> Result<(), TmsError> {
                 if !worktree.is_prunable(None).unwrap_or_default() {
                     num_worktree_windows += 1;
                     // prunable worktrees can have an invalid path so skip that
-                    create_window(
-                        &session_name,
-                        &worktree.path().to_string()?,
+                    tmux.new_window(
                         Some(worktree_name),
+                        Some(&worktree.path().to_string()?),
+                        Some(&session_name),
                     );
                 }
             }
         }
         //check if a window is needed for non worktree
         if !repository.is_bare() {
-            let count_current_windows = String::from_utf8(
-                execute_tmux_command(&format!(
-                    "tmux list-windows -t {session_name} -F '#{{window_name}}'"
-                ))
-                .stdout,
-            )
-            .unwrap()
-            .lines()
-            .count();
+            let count_current_windows = tmux
+                .list_windows("'#{window_name}'", Some(&session_name))
+                .lines()
+                .count();
             if count_current_windows <= num_worktree_windows {
-                create_window(&session_name, &session_path, None);
+                tmux.new_window(None, Some(&session_path), Some(&session_name));
             }
         }
     }
@@ -589,7 +548,11 @@ fn refresh_command(args: &RefreshCommand) -> Result<(), TmsError> {
     Ok(())
 }
 
-fn clone_repo_command(args: &CloneRepoCommand, config: Config) -> Result<(), TmsError> {
+fn clone_repo_command(
+    args: &CloneRepoCommand,
+    config: Config,
+    tmux: &Tmux,
+) -> Result<(), TmsError> {
     let search_dirs = config
         .search_dirs
         .ok_or(TmsError::ConfigError)
@@ -612,7 +575,7 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config) -> Result<(), Tms
 
     let mut session_name = repo_name.to_string();
 
-    if session_exists(&session_name) {
+    if session_exists(&session_name, tmux) {
         session_name = format!(
             "{}/{}",
             path.parent()
@@ -624,13 +587,9 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config) -> Result<(), Tms
         );
     }
 
-    execute_tmux_command(&format!(
-        "tmux new-session -ds {} -c {}",
-        session_name,
-        path.display()
-    ));
-    set_up_tmux_env(&repo, &session_name)?;
-    switch_to_session(&session_name);
+    tmux.new_session(Some(&session_name), Some(&path.display().to_string()));
+    set_up_tmux_env(&repo, &session_name, tmux)?;
+    switch_to_session(&session_name, tmux);
 
     Ok(())
 }

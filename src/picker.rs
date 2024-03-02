@@ -1,5 +1,6 @@
 use std::{
     io::{self, Stdout},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -27,14 +28,19 @@ use ratatui::{
 
 use crate::{
     configs::PickerColorConfig,
-    execute_tmux_command,
     keymap::{default_keymap, Keymap, PickerAction},
+    tmux::Tmux,
     TmsError,
 };
 
+pub enum Preview {
+    SessionPane,
+    None,
+}
+
 pub struct Picker {
     matcher: Nucleo<String>,
-    preview_command: Option<String>,
+    preview: Preview,
 
     colors: Option<PickerColorConfig>,
 
@@ -42,10 +48,11 @@ pub struct Picker {
     filter: String,
     cursor_pos: u16,
     keymap: Keymap,
+    tmux: Tmux,
 }
 
 impl Picker {
-    pub fn new(list: &[String], preview_command: Option<String>, keymap: Option<Keymap>) -> Self {
+    pub fn new(list: &[String], preview: Preview, keymap: Option<Keymap>, tmux: Tmux) -> Self {
         let matcher = Nucleo::new(nucleo::Config::DEFAULT, Arc::new(request_redraw), None, 1);
 
         let injector = matcher.injector();
@@ -64,12 +71,13 @@ impl Picker {
 
         Picker {
             matcher,
-            preview_command,
+            preview,
             colors: None,
             selection: ListState::default(),
             filter: String::default(),
             cursor_pos: 0,
             keymap: default_keymap,
+            tmux,
         }
     }
 
@@ -146,7 +154,7 @@ impl Picker {
         let picker_pane;
         let preview_pane;
 
-        let preview_split = if self.preview_command.is_some() {
+        let preview_split = if !matches!(self.preview, Preview::None) {
             preview_direction = if f.size().width.div_ceil(2) >= f.size().height {
                 picker_pane = 0;
                 preview_pane = 1;
@@ -165,7 +173,7 @@ impl Picker {
             picker_pane = 0;
             preview_pane = 1;
             preview_direction = Direction::Horizontal;
-            [f.size()].into()
+            Rc::new([f.size()])
         };
 
         let layout = Layout::new(
@@ -244,9 +252,8 @@ impl Picker {
         f.render_widget(input, layout[1]);
         f.set_cursor(layout[1].x + self.cursor_pos + 2, layout[1].y);
 
-        if let Some(command) = &self.preview_command {
+        if !matches!(self.preview, Preview::None) {
             self.render_preview(
-                command,
                 snapshot,
                 f,
                 &border_color,
@@ -258,7 +265,6 @@ impl Picker {
 
     fn render_preview(
         &self,
-        command: &str,
         snapshot: &Snapshot<String>,
         f: &mut Frame,
         border_color: &Color,
@@ -267,8 +273,10 @@ impl Picker {
     ) {
         let text = if let Some(index) = self.selection.selected() {
             if let Some(item) = snapshot.get_matched_item(index as u32) {
-                let command = command.replace("{}", item.data);
-                let output = execute_tmux_command(&command);
+                let output = match self.preview {
+                    Preview::SessionPane => self.tmux.capture_pane(item.data),
+                    Preview::None => panic!("preview rendering should not have occured"),
+                };
 
                 if output.status.success() {
                     String::from_utf8(output.stdout).unwrap()
