@@ -32,6 +32,10 @@ nucleo = "0.4.0"
 ratatui = "0.26.0"
 crossterm = "0.27.0"
 
+[lib]
+name = "tms"
+path = "src/lib.rs"
+
 [[bin]]
 name = "tms"
 path = "src/main.rs"

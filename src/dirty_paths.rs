@@ -2,7 +2,7 @@ use error_stack::{Result, ResultExt};
 
 use crate::TmsError;
 
-pub(crate) trait DirtyUtf8Path {
+pub trait DirtyUtf8Path {
     fn to_string(&self) -> Result<String, TmsError>;
 }
 

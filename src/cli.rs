@@ -112,7 +112,7 @@ pub struct CloneRepoCommand {
 }
 
 impl Cli {
-    pub(crate) fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven, TmsError> {
+    pub fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven, TmsError> {
         // Get the configuration from the config file
         let config = Config::new().change_context(TmsError::ConfigError)?;
 

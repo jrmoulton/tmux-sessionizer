@@ -293,7 +293,7 @@ pub fn default_keymap() -> Keymap {
     ])
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum PickerAction {
     #[serde(rename = "")]
     Noop,
