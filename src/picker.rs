@@ -311,11 +311,12 @@ impl Picker {
 
     fn move_up(&mut self) {
         let item_count = self.matcher.snapshot().matched_item_count() as usize;
-        let max = if item_count == 0 {
+        if item_count == 0 {
             return;
-        } else {
-            item_count - 1
-        };
+        }
+
+        let max = item_count - 1;
+
         match self.selection.selected() {
             Some(i) if i >= max => {}
             Some(i) => self.selection.select(Some(i + 1)),
