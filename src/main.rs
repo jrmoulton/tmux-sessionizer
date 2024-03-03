@@ -1,6 +1,7 @@
 mod cli;
 mod configs;
 mod dirty_paths;
+mod error;
 mod keymap;
 mod picker;
 mod repos;
@@ -8,6 +9,7 @@ mod repos;
 use crate::{
     cli::{Cli, SubCommandGiven},
     dirty_paths::DirtyUtf8Path,
+    error::TmsError,
     repos::{find_repos, RepoContainer},
 };
 use clap::Parser;
@@ -17,7 +19,7 @@ use git2::Repository;
 
 use keymap::Keymap;
 use picker::Picker;
-use std::{error::Error, fmt::Display, process};
+use std::{fmt::Display, process};
 
 fn main() -> Result<(), TmsError> {
     // Install debug hooks for formatting of error handling
@@ -194,27 +196,6 @@ impl Display for Suggestion {
         f.write_str(&format!("Suggestion: {}", self.0).green().bold().to_string())
     }
 }
-
-#[derive(Debug)]
-pub(crate) enum TmsError {
-    GitError,
-    NonUtf8Path,
-    TuiError(String),
-    IoError,
-    ConfigError,
-}
-impl Display for TmsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ConfigError => write!(f, "Config Error"),
-            Self::GitError => write!(f, "Git Error"),
-            Self::NonUtf8Path => write!(f, "Non Utf-8 Path"),
-            Self::IoError => write!(f, "IO Error"),
-            Self::TuiError(inner) => write!(f, "TUI error: {inner}"),
-        }
-    }
-}
-impl Error for TmsError {}
 
 #[cfg(test)]
 mod tests;
