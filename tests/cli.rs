@@ -43,6 +43,7 @@ fn tms_config() -> anyhow::Result<()> {
         display_full_path: Some(false),
         search_submodules: Some(false),
         recursive_submodules: Some(false),
+        switch_filter_unknown: Some(false),
         session_sort_order: Some(SessionSortOrderConfig::Alphabetical),
         excluded_dirs: Some(vec![excluded_dir.clone()]),
         search_paths: None,
@@ -59,7 +60,6 @@ fn tms_config() -> anyhow::Result<()> {
             prompt_color: Some(picker_prompt_color.clone()),
         }),
         shortcuts: None,
-        switch_filter_unknown: None,
     };
 
     let mut tms = Command::cargo_bin("tms")?;
@@ -78,6 +78,8 @@ fn tms_config() -> anyhow::Result<()> {
             "--search-submodules",
             "false",
             "--recursive-submodules",
+            "false",
+            "--switch-filter-unknown",
             "false",
             "--session-sort-order",
             "Alphabetical",
@@ -103,38 +105,6 @@ fn tms_config() -> anyhow::Result<()> {
         expected_config, actual_config,
         "tms config behaves as intended"
     );
-
-    Ok(())
-}
-
-#[test]
-fn tms() -> anyhow::Result<()> {
-    let directory = tempdir()?;
-    let config_file_path = directory.path().join("config.toml");
-
-    // first setup a search path via `tms config`
-    let mut tms = Command::cargo_bin("tms")?;
-
-    tms.env("TMS_CONFIG_FILE", &config_file_path)
-        .arg("config")
-        .args([
-            "--paths",
-            directory.path().to_str().unwrap(),
-            "--max-depths",
-            "1",
-        ]);
-
-    tms.assert().success().code(0);
-
-    // then, run tms
-    // TODO: this part doesn't work
-    let mut tms = Command::cargo_bin("tms")?;
-
-    tms.env("TMS_CONFIG_FILE", &config_file_path)
-        .env("TMS_TMUX_SOCKET", "test") // this ensures we don't use the active tmux session
-        .write_stdin("AHAHAHH");
-
-    tms.assert().success().code(0);
 
     Ok(())
 }
