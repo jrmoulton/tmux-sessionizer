@@ -6,6 +6,7 @@ use crate::{
     dirty_paths::DirtyUtf8Path,
     execute_command, get_single_selection,
     picker::Preview,
+    repos::{find_repos, RepoContainer},
     session_exists, set_up_tmux_env, switch_to_session,
     tmux::Tmux,
     TmsError,

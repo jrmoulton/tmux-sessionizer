@@ -1,13 +1,11 @@
 use clap::Parser;
-use configs::ConfigError;
 use error_stack::{Report, Result, ResultExt};
-use std::fs::canonicalize;
 use tms::{
     cli::{Cli, SubCommandGiven},
-    configs::{self, SearchDirectory},
     dirty_paths::DirtyUtf8Path,
-    find_repos, get_single_selection,
+    get_single_selection,
     picker::Preview,
+    repos::find_repos,
     repos::RepoContainer,
     session_exists, set_up_tmux_env, switch_to_session,
     tmux::Tmux,

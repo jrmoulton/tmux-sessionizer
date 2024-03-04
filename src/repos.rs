@@ -32,7 +32,7 @@ impl RepoContainer for HashMap<String, Repository> {
     }
 }
 
-pub(crate) fn find_repos(
+pub fn find_repos(
     directories: Vec<SearchDirectory>,
     excluded_dirs: Option<Vec<String>>,
     display_full_path: Option<bool>,

@@ -127,7 +127,7 @@ impl Config {
         Ok(())
     }
 
-    pub(crate) fn search_dirs(&self) -> Result<Vec<SearchDirectory>, TmsError> {
+    pub fn search_dirs(&self) -> Result<Vec<SearchDirectory>, TmsError> {
         let mut search_dirs = if let Some(search_dirs) = self.search_dirs.as_ref() {
             search_dirs
                 .iter()
