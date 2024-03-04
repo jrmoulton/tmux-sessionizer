@@ -1,14 +1,15 @@
 pub mod cli;
 pub mod configs;
 pub mod dirty_paths;
+pub mod error;
 pub mod keymap;
 pub mod picker;
 pub mod repos;
 pub mod tmux;
 
+use error::TmsError;
 use error_stack::{Result, ResultExt};
 use git2::Repository;
-use std::error::Error;
 use std::{fmt::Display, process};
 
 use configs::PickerColorConfig;
@@ -114,24 +115,3 @@ impl Display for Suggestion {
         f.write_str(&format!("Suggestion: {}", self.0).green().bold().to_string())
     }
 }
-
-#[derive(Debug)]
-pub enum TmsError {
-    GitError,
-    NonUtf8Path,
-    TuiError(String),
-    IoError,
-    ConfigError,
-}
-impl Display for TmsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ConfigError => write!(f, "Config Error"),
-            Self::GitError => write!(f, "Git Error"),
-            Self::NonUtf8Path => write!(f, "Non Utf-8 Path"),
-            Self::IoError => write!(f, "IO Error"),
-            Self::TuiError(inner) => write!(f, "TUI error: {inner}"),
-        }
-    }
-}
-impl Error for TmsError {}

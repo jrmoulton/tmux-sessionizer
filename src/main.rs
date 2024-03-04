@@ -3,13 +3,14 @@ use error_stack::{Report, Result, ResultExt};
 use tms::{
     cli::{Cli, SubCommandGiven},
     dirty_paths::DirtyUtf8Path,
+    error::TmsError,
     get_single_selection,
     picker::Preview,
     repos::find_repos,
     repos::RepoContainer,
     session_exists, set_up_tmux_env, switch_to_session,
     tmux::Tmux,
-    Suggestion, TmsError,
+    Suggestion,
 };
 
 fn main() -> Result<(), TmsError> {
