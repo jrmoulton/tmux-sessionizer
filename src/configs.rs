@@ -8,7 +8,7 @@ use ratatui::style::{Color, Style};
 use crate::{keymap::Keymap, Suggestion, TmsError};
 
 #[derive(Debug)]
-pub(crate) enum ConfigError {
+pub enum ConfigError {
     NoDefaultSearchPath,
     LoadError,
     TomlError,
@@ -28,7 +28,7 @@ impl Display for ConfigError {
     }
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
     pub default_session: Option<String>,
     pub display_full_path: Option<bool>,
@@ -127,7 +127,7 @@ impl Config {
         Ok(())
     }
 
-    pub(crate) fn search_dirs(&self) -> Result<Vec<SearchDirectory>, TmsError> {
+    pub fn search_dirs(&self) -> Result<Vec<SearchDirectory>, TmsError> {
         let mut search_dirs = if let Some(search_dirs) = self.search_dirs.as_ref() {
             search_dirs
                 .iter()
@@ -179,26 +179,26 @@ impl Config {
     }
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SearchDirectory {
     pub path: PathBuf,
     pub depth: usize,
 }
 
 impl SearchDirectory {
-    pub(crate) fn new(path: PathBuf, depth: usize) -> Self {
+    pub fn new(path: PathBuf, depth: usize) -> Self {
         SearchDirectory { path, depth }
     }
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Session {
     pub name: Option<String>,
     pub path: Option<String>,
     pub windows: Option<Vec<Window>>,
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Window {
     pub name: Option<String>,
     pub path: Option<String>,
@@ -206,10 +206,10 @@ pub struct Window {
     pub command: Option<String>,
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Pane {}
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PickerColorConfig {
     pub highlight_color: Option<String>,
     pub highlight_text_color: Option<String>,
@@ -273,7 +273,7 @@ fn rgb_to_color(color: &str) -> Option<Color> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum SessionSortOrderConfig {
     Alphabetical,
     LastAttached,

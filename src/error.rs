@@ -1,7 +1,7 @@
 use std::{error::Error, fmt::Display};
 
 #[derive(Debug)]
-pub(crate) enum TmsError {
+pub enum TmsError {
     GitError,
     NonUtf8Path,
     TuiError(String),
