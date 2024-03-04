@@ -40,14 +40,13 @@ popup is displayed (and it's fast)
 ### The `tms windows` command
 
 Similar to `tms switch`, you can show other active windows in the current session with a fuzzy
-finder and a preview window. A config for use with `display-popup`, could look like this 
+finder and a preview window. A config for use with `display-popup`, could look like this
 `bind C-w display-popup -E "tms windows"`.
-
 
 ### The `tms rename` command
 
-Using this command you can automatically rename the active session along with the directory name
-and the active directory inside all the panes in the active session will be changed to the renamed
+Using this command you can automatically rename the active session along with the directory name and
+the active directory inside all the panes in the active session will be changed to the renamed
 directory
 
 `tms rename <new_session_name>`
@@ -56,7 +55,8 @@ directory
 
 ### The `tms refresh` command
 
-Using this command you can automatically generate missing worktree windows for the active session or a provided `session_name`. 
+Using this command you can automatically generate missing worktree windows for the active session or
+a provided `session_name`.
 
 `tms refresh <session_name>`
 
@@ -110,6 +110,8 @@ Options:
           Also show initialized submodules [possible values: true, false]
       --recursive-submodules <true | false>
           Search submodules for submodules [possible values: true, false]
+      --switch-filter-unknown <true | false>
+          Only include sessions from search paths in the switcher [possible values: true, false]
   -d, --max-depths <max depth>...
           The maximum depth to traverse when searching for repositories in search paths, length should match the number of search paths if specified (defaults to 10)
       --picker-highlight-color <#rrggbb>
@@ -127,43 +129,56 @@ Options:
   -h, --help
           Print help
 ```
+
 #### Config file location
 
 By default, tms looks for a configuration in the platform-specific config directory:
+
 ```
 Linux: /home/alice/.config/tms/config.toml
 macOS: /Users/Alice/Library/Application Support/tms/config.toml
 Windows: C:\Users\Alice\AppData\Roaming\tms\config.toml
 ```
-If the config directory can't be found, it will also check `~/.config/tms/config.toml` (only relevant on Windows and macOS). Alternatively, you can specify a custom config location by setting the `TMS_CONFIG_FILE` environment variable in your shell profile with your desired config path.
+
+If the config directory can't be found, it will also check `~/.config/tms/config.toml` (only
+relevant on Windows and macOS). Alternatively, you can specify a custom config location by setting
+the `TMS_CONFIG_FILE` environment variable in your shell profile with your desired config path.
 
 #### Customizing keyboard shortcuts
 
-Keyboard shortcuts can be customized by adding a `[shortcuts]` section in the config file and adding bindings as pairs of `shortcut = action`, for example:
+Keyboard shortcuts can be customized by adding a `[shortcuts]` section in the config file and adding
+bindings as pairs of `shortcut = action`, for example:
+
 ```
 [shortcuts]
 "ctrl-k" = "delete_to_line_end"
 ```
 
 Available actions are:
- - "" (to remove a default binding)
- - "cancel"
- - "confirm"
- - "backspace"
- - "delete"
- - "move_up"
- - "move_down"
- - "cursor_left"
- - "cursor_right"
- - "delete_word"
- - "delete_to_line_start"
- - "delete_to_line_end"
- - "move_to_line_start"
- - "move_to_line_end"
+
+- "" (to remove a default binding)
+- "cancel"
+- "confirm"
+- "backspace"
+- "delete"
+- "move_up"
+- "move_down"
+- "cursor_left"
+- "cursor_right"
+- "delete_word"
+- "delete_to_line_start"
+- "delete_to_line_end"
+- "move_to_line_start"
+- "move_to_line_end"
 
 ## Installation
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/tmux-sessionizer.svg)](https://repology.org/project/tmux-sessionizer/versions)
+
+### Pre-built binaries
+
+Check the [releases page](https://github.com/jrmoulton/tmux-sessionizer/releases) for the latest
+pre-built binaries
 
 ### Cargo
 

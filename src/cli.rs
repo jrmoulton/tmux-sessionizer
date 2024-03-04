@@ -69,6 +69,9 @@ pub struct ConfigCommand {
     #[arg(long, value_name = "true | false")]
     /// Search submodules for submodules
     recursive_submodules: Option<bool>,
+    #[arg(long, value_name = "true | false")]
+    ///Only include sessions from search paths in the switcher
+    switch_filter_unknown: Option<bool>,
     #[arg(long, short = 'd', value_name = "max depth", num_args = 1..)]
     /// The maximum depth to traverse when searching for repositories in search paths, length
     /// should match the number of search paths if specified (defaults to 10)
@@ -225,7 +228,21 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
         sessions.sort_by(|a, b| b.1.cmp(a.1));
     }
 
-    let sessions: Vec<String> = sessions.into_iter().map(|s| s.0.to_string()).collect();
+    let mut sessions: Vec<String> = sessions.into_iter().map(|s| s.0.to_string()).collect();
+    if let Some(true) = config.switch_filter_unknown {
+        let repos = find_repos(
+            config.search_dirs()?,
+            config.excluded_dirs,
+            config.display_full_path,
+            config.search_submodules,
+            config.recursive_submodules,
+        )?;
+
+        sessions = sessions
+            .into_iter()
+            .filter(|session| repos.find_repo(session).is_some())
+            .collect::<Vec<String>>();
+    }
 
     if let Some(target_session) = get_single_selection(
         &sessions,
@@ -312,6 +329,10 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsErr
 
     if let Some(submodules) = args.recursive_submodules {
         config.recursive_submodules = Some(submodules.to_owned());
+    }
+
+    if let Some(switch_filter_unknown) = args.switch_filter_unknown {
+        config.switch_filter_unknown = Some(switch_filter_unknown.to_owned());
     }
 
     if let Some(dirs) = &args.excluded_dirs {

@@ -1,11 +1,11 @@
 use clap::ValueEnum;
 use error_stack::{Result, ResultExt};
 use serde_derive::{Deserialize, Serialize};
-use std::{env, fmt::Display, io::Write, path::PathBuf};
+use std::{env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
 
 use ratatui::style::{Color, Style};
 
-use crate::{keymap::Keymap, Suggestion};
+use crate::{keymap::Keymap, Suggestion, TmsError};
 
 #[derive(Debug)]
 pub enum ConfigError {
@@ -34,6 +34,7 @@ pub struct Config {
     pub display_full_path: Option<bool>,
     pub search_submodules: Option<bool>,
     pub recursive_submodules: Option<bool>,
+    pub switch_filter_unknown: Option<bool>,
     pub session_sort_order: Option<SessionSortOrderConfig>,
     pub excluded_dirs: Option<Vec<String>>,
     pub search_paths: Option<Vec<String>>, // old format, deprecated
@@ -124,6 +125,57 @@ impl Config {
         file.write_all(&toml_pretty)
             .change_context(ConfigError::FileWriteError)?;
         Ok(())
+    }
+
+    pub(crate) fn search_dirs(&self) -> Result<Vec<SearchDirectory>, TmsError> {
+        let mut search_dirs = if let Some(search_dirs) = self.search_dirs.as_ref() {
+            search_dirs
+                .iter()
+                .map(|search_dir| {
+                    let expanded_path = shellexpand::full(&search_dir.path.to_string_lossy())
+                        .change_context(TmsError::IoError)
+                        .unwrap()
+                        .to_string();
+
+                    let path = canonicalize(expanded_path)
+                        .change_context(TmsError::IoError)
+                        .unwrap();
+
+                    SearchDirectory::new(path, search_dir.depth)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // merge old search paths with new search directories
+        if let Some(search_paths) = self.search_paths.as_ref() {
+            if !search_paths.is_empty() {
+                search_dirs.extend(search_paths.iter().map(|path| {
+                    SearchDirectory::new(
+                        canonicalize(
+                            shellexpand::full(&path)
+                                .change_context(TmsError::IoError)
+                                .unwrap()
+                                .to_string(),
+                        )
+                        .change_context(TmsError::IoError)
+                        .unwrap(),
+                        10,
+                    )
+                }));
+            }
+        }
+
+        if search_dirs.is_empty() {
+            return Err(ConfigError::NoDefaultSearchPath)
+            .attach_printable(
+                "You must configure at least one default search path with the `config` subcommand. E.g `tms config` ",
+            )
+            .change_context(TmsError::ConfigError);
+        }
+
+        Ok(search_dirs)
     }
 }
 
