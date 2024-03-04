@@ -1,8 +1,7 @@
 use std::{collections::HashMap, fs::canonicalize};
 
 use crate::{
-    configs::SearchDirectory,
-    configs::{Config, SessionSortOrderConfig},
+    configs::{Config, SearchDirectory, SessionSortOrderConfig},
     dirty_paths::DirtyUtf8Path,
     execute_command, get_single_selection,
     picker::Preview,

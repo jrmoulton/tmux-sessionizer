@@ -7,16 +7,18 @@ pub mod picker;
 pub mod repos;
 pub mod tmux;
 
-use error::TmsError;
 use error_stack::{Result, ResultExt};
 use git2::Repository;
 use std::{fmt::Display, process};
 
-use configs::PickerColorConfig;
-use dirty_paths::DirtyUtf8Path;
-use keymap::Keymap;
-use picker::{Picker, Preview};
-use tmux::Tmux;
+use crate::{
+    configs::PickerColorConfig,
+    dirty_paths::DirtyUtf8Path,
+    error::TmsError,
+    keymap::Keymap,
+    picker::{Picker, Preview},
+    tmux::Tmux,
+};
 
 pub fn switch_to_session(repo_short_name: &str, tmux: &Tmux) {
     if !is_in_tmux_session() {

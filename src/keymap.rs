@@ -6,7 +6,7 @@ use serde::ser::Error as SerError;
 use serde::{Deserialize, Serialize};
 use serde_derive::{Deserialize, Serialize};
 
-use crate::TmsError;
+use crate::error::TmsError;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd)]
 pub struct Key {
