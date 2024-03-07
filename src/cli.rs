@@ -57,9 +57,6 @@ pub struct ConfigCommand {
     #[arg(long = "remove", value_name = "remove dir", num_args = 1..)]
     /// As many directory names to be removed from exclusion list
     remove_dir: Option<Vec<String>>,
-    #[arg(long = "full-path", value_name = "true | false")]
-    /// Use the full path when displaying directories
-    display_full_path: Option<bool>,
     #[arg(long = "path-view", value_name = "name_only | relative | absolute")]
     /// Select how the path should be displayed
     path_view: Option<PathView>,
@@ -329,10 +326,6 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsErr
         .map(|val| val.replace('.', "_"))
     {
         config.default_session = Some(default_session);
-    }
-
-    if let Some(_) = args.display_full_path {
-        println!("This command is deprecated, please use `path_view`.")
     }
 
     if let Some(display) = &args.path_view {
