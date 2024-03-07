@@ -28,10 +28,20 @@ impl Display for ConfigError {
     }
 }
 
+#[derive(Default, Debug, Serialize, Deserialize, Clone, ValueEnum)]
+pub enum PathView {
+    #[default]
+    NameOnly,
+    Relative,
+    Absolute,
+}
+
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub default_session: Option<String>,
-    pub display_full_path: Option<bool>,
+    pub display_full_path: Option<bool>, // deprecated, use path_view instead.
+    #[serde(default)]
+    pub path_view: PathView,
     pub search_submodules: Option<bool>,
     pub recursive_submodules: Option<bool>,
     pub switch_filter_unknown: Option<bool>,
@@ -88,7 +98,7 @@ impl Config {
             .attach_printable("Could not deserialize configuration")
     }
 
-    pub(crate) fn save(&self) -> Result<(), ConfigError> {
+    pub(crate) fn save(&self) -> Result<PathBuf, ConfigError> {
         let toml_pretty = toml::to_string_pretty(self)
             .change_context(ConfigError::TomlError)?
             .into_bytes();
@@ -121,10 +131,10 @@ impl Config {
         std::fs::create_dir_all(parent)
             .change_context(ConfigError::FileWriteError)
             .attach_printable("Unable to create tms config folder")?;
-        let mut file = std::fs::File::create(path).change_context(ConfigError::FileWriteError)?;
+        let mut file = std::fs::File::create(path.clone()).change_context(ConfigError::FileWriteError)?;
         file.write_all(&toml_pretty)
             .change_context(ConfigError::FileWriteError)?;
-        Ok(())
+        Ok(path)
     }
 
     pub(crate) fn search_dirs(&self) -> Result<Vec<SearchDirectory>, TmsError> {

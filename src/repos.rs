@@ -5,9 +5,11 @@ use std::{
     collections::{HashMap, VecDeque},
     fs,
     path::Path,
+    path::PathBuf
 };
+use pathdiff::diff_paths;
 
-use crate::{configs::SearchDirectory, dirty_paths::DirtyUtf8Path, TmsError};
+use crate::{configs::{PathView, SearchDirectory}, dirty_paths::DirtyUtf8Path, TmsError};
 
 pub trait RepoContainer {
     fn find_repo(&self, name: &str) -> Option<&Repository>;
@@ -35,16 +37,19 @@ impl RepoContainer for HashMap<String, Repository> {
 pub(crate) fn find_repos(
     directories: Vec<SearchDirectory>,
     excluded_dirs: Option<Vec<String>>,
-    display_full_path: Option<bool>,
+    path_view: PathView,
     search_submodules: Option<bool>,
     recursive_submodules: Option<bool>,
 ) -> Result<impl RepoContainer, TmsError> {
     let mut repos = HashMap::new();
-    let mut to_search = VecDeque::new();
 
-    for search_directory in directories {
-        to_search.push_back(search_directory);
-    }
+    let mut to_search = VecDeque::from(directories
+        .into_iter()
+        .map(|dir| {
+            let root_dir = dir.path.clone();
+            (dir, root_dir)
+        })
+        .collect::<Vec<(SearchDirectory, PathBuf)>>());
 
     let excluded_dirs = match excluded_dirs {
         Some(excluded_dirs) => excluded_dirs,
@@ -54,21 +59,20 @@ pub(crate) fn find_repos(
         .match_kind(MatchKind::LeftmostFirst)
         .build(excluded_dirs)
         .change_context(TmsError::IoError)?;
-    while let Some(file) = to_search.pop_front() {
+    while let Some((file, root_path)) = to_search.pop_front() {
         if excluder.is_match(&file.path.to_string()?) {
             continue;
         }
-
-        let file_name = get_repo_name(&file.path, &repos)?;
 
         if let Ok(repo) = git2::Repository::open(file.path.clone()) {
             if repo.is_worktree() {
                 continue;
             }
-            let name = if let Some(true) = display_full_path {
-                file.path.to_string()?
-            } else {
-                file_name
+
+            let name = match &path_view {
+                PathView::Absolute => file.path.to_string()?,
+                PathView::NameOnly => get_repo_name(&file.path, &repos)?,
+                PathView::Relative => diff_paths(&file.path, &root_path.parent().expect("there should be a parent")).expect("The file name doesn't end in `..`").to_string()?,
             };
 
             if search_submodules == Some(true) {
@@ -77,7 +81,7 @@ pub(crate) fn find_repos(
                         submodules,
                         &name,
                         &mut repos,
-                        display_full_path,
+                        &path_view,
                         recursive_submodules,
                     )?;
                 }
@@ -88,7 +92,9 @@ pub(crate) fn find_repos(
                 .change_context(TmsError::IoError)?
                 .map(|dir_entry| dir_entry.expect("Found non-valid utf8 path").path());
             for dir in read_dir {
-                to_search.push_back(SearchDirectory::new(dir, file.depth - 1))
+                if dir.is_dir() {
+                    to_search.push_back((SearchDirectory::new(dir, file.depth - 1), root_path.clone()))
+                }
             }
         }
     }
@@ -122,7 +128,7 @@ fn find_submodules(
     submodules: Vec<Submodule>,
     parent_name: &String,
     repos: &mut impl RepoContainer,
-    display_full_path: Option<bool>,
+    path_view: &PathView,
     recursive: Option<bool>,
 ) -> Result<(), TmsError> {
     for submodule in submodules.iter() {
@@ -138,15 +144,15 @@ fn find_submodules(
             .file_name()
             .expect("The file name doesn't end in `..`")
             .to_string()?;
-        let name = if let Some(true) = display_full_path {
-            path.to_string()?
-        } else {
-            format!("{}>{}", parent_name, submodule_file_name)
+        let name = match path_view {
+            PathView::NameOnly => format!("{}>{}", parent_name, submodule_file_name),
+            PathView::Relative => format!("{}>{}", parent_name, submodule_file_name),
+            PathView::Absolute => path.to_string()?,
         };
 
         if recursive == Some(true) {
             if let Ok(submodules) = repo.submodules() {
-                find_submodules(submodules, &name, repos, display_full_path, recursive)?;
+                find_submodules(submodules, &name, repos, path_view, recursive)?;
             }
         }
         repos.insert_repo(name, repo);

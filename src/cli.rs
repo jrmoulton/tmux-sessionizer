@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs::canonicalize};
 
 use crate::{
-    configs::{Config, SearchDirectory, SessionSortOrderConfig},
+    configs::{Config, SearchDirectory, SessionSortOrderConfig, PathView},
     dirty_paths::DirtyUtf8Path,
     execute_command, execute_tmux_command, get_single_selection,
     repos::{find_repos, RepoContainer},
@@ -60,6 +60,9 @@ pub struct ConfigCommand {
     #[arg(long = "full-path", value_name = "true | false")]
     /// Use the full path when displaying directories
     display_full_path: Option<bool>,
+    #[arg(long = "path-view", value_name = "name_only | relative | absolute")]
+    /// Select how the path should be displayed
+    path_view: Option<PathView>,
     #[arg(long, value_name = "true | false")]
     /// Also show initialized submodules
     search_submodules: Option<bool>,
@@ -237,7 +240,7 @@ fn switch_command(config: Config) -> Result<(), TmsError> {
         let repos = find_repos(
             config.search_dirs()?,
             config.excluded_dirs,
-            config.display_full_path,
+            config.path_view,
             config.search_submodules,
             config.recursive_submodules,
         )?;
@@ -328,8 +331,12 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsErr
         config.default_session = Some(default_session);
     }
 
-    if let Some(display) = args.display_full_path {
-        config.display_full_path = Some(display.to_owned());
+    if let Some(_) = args.display_full_path {
+        println!("This command is deprecated, please use `path_view`.")
+    }
+
+    if let Some(display) = &args.path_view {
+        config.path_view = display.to_owned();
     }
 
     if let Some(submodules) = args.search_submodules {
@@ -397,8 +404,8 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsErr
         config.session_sort_order = Some(order.to_owned());
     }
 
-    config.save().change_context(TmsError::ConfigError)?;
-    println!("Configuration has been stored");
+    let path = config.save().change_context(TmsError::ConfigError)?;
+    println!("Configuration has been stored to {}", path.to_string()?);
     Ok(())
 }
 

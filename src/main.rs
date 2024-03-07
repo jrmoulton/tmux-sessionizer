@@ -38,7 +38,7 @@ fn main() -> Result<(), TmsError> {
     let repos = find_repos(
         config.search_dirs()?,
         config.excluded_dirs,
-        config.display_full_path,
+        config.path_view,
         config.search_submodules,
         config.recursive_submodules,
     )?;

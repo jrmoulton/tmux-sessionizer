@@ -31,6 +31,7 @@ dirs = "5.0.1"
 nucleo = "0.4.0"
 ratatui = "0.26.0"
 crossterm = "0.27.0"
+pathdiff = "0.2.1"
 
 [[bin]]
 name = "tms"
