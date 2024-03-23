@@ -91,7 +91,7 @@ pub struct ConfigCommand {
     #[arg(long, value_name = "#rrggbb")]
     /// Color of the prompt in the picker
     picker_prompt_color: Option<String>,
-    #[arg(long, value_name = "Alphabetical | LastAttach")]
+    #[arg(long, value_name = "Alphabetical | LastAttached")]
     /// Set the sort order of the sessions in the switch command
     session_sort_order: Option<SessionSortOrderConfig>,
 }
