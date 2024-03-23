@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::canonicalize};
+use std::{collections::HashMap, fs::canonicalize, path::Path};
 
 use crate::{
     configs::{Config, SearchDirectory, SessionSortOrderConfig},
@@ -12,7 +12,7 @@ use crate::{
 };
 use clap::{Args, Parser, Subcommand};
 use error_stack::{Result, ResultExt};
-use git2::Repository;
+use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
 
 #[derive(Debug, Parser)]
 #[command(author, version)]
@@ -91,7 +91,7 @@ pub struct ConfigCommand {
     #[arg(long, value_name = "#rrggbb")]
     /// Color of the prompt in the picker
     picker_prompt_color: Option<String>,
-    #[arg(long, value_name = "Alphabetical | LastAttach")]
+    #[arg(long, value_name = "Alphabetical | LastAttached")]
     /// Set the sort order of the sessions in the switch command
     session_sort_order: Option<SessionSortOrderConfig>,
 }
@@ -592,7 +592,7 @@ fn clone_repo_command(
     let repo_name = repo_name.trim_end_matches(".git");
     path.push(repo_name);
 
-    let repo = Repository::clone(&args.repository, &path).change_context(TmsError::GitError)?;
+    let repo = git_clone(&args.repository, &path)?;
 
     let mut session_name = repo_name.to_string();
 
@@ -613,6 +613,32 @@ fn clone_repo_command(
     switch_to_session(&session_name, tmux);
 
     Ok(())
+}
+
+fn git_clone(repo: &str, target: &Path) -> Result<Repository, TmsError> {
+    let mut callbacks = RemoteCallbacks::new();
+    callbacks.credentials(git_credentials_callback);
+    let mut fo = FetchOptions::new();
+    fo.remote_callbacks(callbacks);
+    let mut builder = RepoBuilder::new();
+    builder.fetch_options(fo);
+
+    builder
+        .clone(repo, target)
+        .change_context(TmsError::GitError)
+}
+
+fn git_credentials_callback(
+    user: &str,
+    user_from_url: Option<&str>,
+    _cred: git2::CredentialType,
+) -> std::result::Result<git2::Cred, git2::Error> {
+    let user = match user_from_url {
+        Some(user) => user,
+        None => user,
+    };
+
+    git2::Cred::ssh_key_from_agent(user)
 }
 
 pub enum SubCommandGiven {
