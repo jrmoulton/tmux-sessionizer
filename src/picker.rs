@@ -58,7 +58,7 @@ impl Picker {
         let injector = matcher.injector();
 
         for str in list {
-            injector.push(str.to_owned(), |dst| dst[0] = str.to_owned().into());
+            injector.push(str.to_owned(), |_, dst| dst[0] = str.to_owned().into());
         }
 
         let mut default_keymap = default_keymap();
