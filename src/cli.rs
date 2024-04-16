@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs::canonicalize};
 
 use crate::{
-    configs::{Config, SearchDirectory, SessionSortOrderConfig, PathView},
+    configs::{config_path, Config, PathView, SearchDirectory, SessionSortOrderConfig},
     dirty_paths::DirtyUtf8Path,
     execute_command, execute_tmux_command, get_single_selection,
     repos::{find_repos, RepoContainer},
@@ -26,6 +26,8 @@ pub enum CliCommand {
     Config(Box<ConfigCommand>),
     /// Initialize tmux with the default sessions
     Start,
+    /// Show the path of the config file
+    Path,
     /// Display other sessions with a fuzzy finder and a preview window
     Switch,
     /// Display the current session's windows with a fuzzy finder and a preview window
@@ -130,6 +132,13 @@ impl Cli {
                 windows_command(config)?;
                 Ok(SubCommandGiven::Yes)
             }
+
+            // Handle the config subcommand
+            Some(CliCommand::Path) => {
+                path_subcommand()?;
+                Ok(SubCommandGiven::Yes)
+            }
+            //
             // Handle the config subcommand
             Some(CliCommand::Config(args)) => {
                 config_command(args, config)?;
@@ -399,6 +408,12 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsErr
 
     let path = config.save().change_context(TmsError::ConfigError)?;
     println!("Configuration has been stored to {}", path.to_string()?);
+    Ok(())
+}
+
+fn path_subcommand() -> Result<(), TmsError> {
+    let path = config_path().change_context(TmsError::ConfigError)?;
+    println!("The configuration used is stored here: {}", path.into_os_string().to_string()?);
     Ok(())
 }
 

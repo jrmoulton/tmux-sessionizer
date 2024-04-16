@@ -5,7 +5,7 @@ use std::{env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
 
 use ratatui::style::{Color, Style};
 
-use crate::{keymap::Keymap, Suggestion, TmsError};
+use crate::{dirty_paths::DirtyUtf8Path, keymap::Keymap, TmsError};
 
 #[derive(Debug)]
 pub(crate) enum ConfigError {
@@ -63,22 +63,8 @@ impl Config {
             Err(e) => match e {
                 env::VarError::NotPresent => {
                     let mut builder = config::Config::builder();
-                    let mut config_found = false; // Stores whether a valid config file was found
-                    if let Some(home_path) = dirs::home_dir() {
-                        config_found = true;
-                        let path = home_path.as_path().join(".config/tms/config.toml");
-                        builder = builder.add_source(config::File::from(path).required(false));
-                    }
-                    if let Some(config_path) = dirs::config_dir() {
-                        config_found = true;
-                        let path = config_path.as_path().join("tms/config.toml");
-                        builder = builder.add_source(config::File::from(path).required(false));
-                    }
-                    if !config_found {
-                        return Err(ConfigError::LoadError)
-                            .attach_printable("Could not find a valid location for config file (both home and config dirs cannot be found)")
-                            .attach(Suggestion("Try specifying a config file with the TMS_CONFIG_FILE environment variable."));
-                    }
+                    let path = config_path()?;
+                    builder = builder.add_source(config::File::from(path).required(false));
                     builder
                 }
                 env::VarError::NotUnicode(_) => {
@@ -92,34 +78,19 @@ impl Config {
             .build()
             .change_context(ConfigError::LoadError)
             .attach_printable("Could not parse configuration")?;
+
         config
             .try_deserialize()
             .change_context(ConfigError::LoadError)
             .attach_printable("Could not deserialize configuration")
     }
 
+
     pub(crate) fn save(&self) -> Result<PathBuf, ConfigError> {
         let toml_pretty = toml::to_string_pretty(self)
             .change_context(ConfigError::TomlError)?
             .into_bytes();
-        // The TMS_CONFIG_FILE envvar should be set, either by the user or when the config is
-        // loaded. However, there is a possibility it becomes unset between loading and saving
-        // the config. In this case, it will fall back to the platform-specific config folder, and
-        // if that can't be found then it's good old ~/.config
-        let path = match env::var("TMS_CONFIG_FILE") {
-            Ok(path) => PathBuf::from(path),
-            Err(_) => {
-                if let Some(config_path) = dirs::config_dir() {
-                    config_path.as_path().join("tms/config.toml")
-                } else if let Some(home_path) = dirs::home_dir() {
-                    home_path.as_path().join(".config/tms/config.toml")
-                } else {
-                    return Err(ConfigError::LoadError)
-                        .attach_printable("Could not find a valid location to write config file (both home and config dirs cannot be found)")
-                        .attach(Suggestion("Try specifying a config file with the TMS_CONFIG_FILE environment variable."));
-                }
-            }
-        };
+        let path = config_path()?;
         let parent = path
             .parent()
             .ok_or(ConfigError::FileWriteError)
@@ -187,6 +158,28 @@ impl Config {
 
         Ok(search_dirs)
     }
+}
+
+pub(crate) fn config_path() -> Result<PathBuf, ConfigError> {
+    // The TMS_CONFIG_FILE envvar should be set, either by the user or when the config is
+    // loaded. However, there is a possibility it becomes unset between loading and saving
+    // the config. In this case, it will fall back to the platform-specific config folder, and
+    // if that can't be found then it's good old ~/.config
+    let path = match env::var("TMS_CONFIG_FILE") {
+        Ok(path) => PathBuf::from(path),
+        Err(_) => {
+            if let Some(home_path) = dirs::home_dir() {
+                home_path.as_path().join(".config/tms/config.toml")
+            } else if let Some(config_path) = dirs::config_dir() {
+                config_path.as_path().join("tms/config.toml")
+            } else {
+                return Err(ConfigError::LoadError)
+                    .attach_printable("Could not find a valid location for config file (both home and config dirs cannot be found)");
+                    // .attach(Suggestion("Try specifying a config file with the TMS_CONFIG_FILE environment variable."));
+            }
+        }
+    };
+    Ok(path)
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
