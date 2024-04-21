@@ -60,6 +60,7 @@ fn tms_config() -> anyhow::Result<()> {
             prompt_color: Some(picker_prompt_color.clone()),
         }),
         shortcuts: None,
+        bookmarks: None,
     };
 
     let mut tms = Command::cargo_bin("tms")?;

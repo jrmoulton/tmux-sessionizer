@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::canonicalize, path::Path};
+use std::{collections::HashMap, env::current_dir, fs::canonicalize, path::Path};
 
 use crate::{
     configs::{Config, SearchDirectory, SessionSortOrderConfig},
@@ -44,6 +44,8 @@ pub enum CliCommand {
     Refresh(RefreshCommand),
     /// Clone repository into the first search path and create a new session for it
     CloneRepo(CloneRepoCommand),
+    /// Bookmark a directory so it is available to select along with the Git repositories
+    Bookmark(BookmarkCommand),
 }
 
 #[derive(Debug, Args)]
@@ -114,6 +116,15 @@ pub struct CloneRepoCommand {
     repository: String,
 }
 
+#[derive(Debug, Args)]
+pub struct BookmarkCommand {
+    #[arg(long, short)]
+    /// Delete instead of add a bookmark
+    delete: bool,
+    /// Path to bookmark, if left empty bookmark the current directory.
+    path: Option<String>,
+}
+
 impl Cli {
     pub fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven> {
         // Get the configuration from the config file
@@ -166,6 +177,11 @@ impl Cli {
 
             Some(CliCommand::CloneRepo(args)) => {
                 clone_repo_command(args, config, tmux)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            Some(CliCommand::Bookmark(args)) => {
+                bookmark_command(args, config)?;
                 Ok(SubCommandGiven::Yes)
             }
 
@@ -640,6 +656,27 @@ fn git_credentials_callback(
     };
 
     git2::Cred::ssh_key_from_agent(user)
+}
+
+fn bookmark_command(args: &BookmarkCommand, mut config: Config) -> Result<()> {
+    let path = if let Some(path) = &args.path {
+        path.to_owned()
+    } else {
+        current_dir()
+            .change_context(TmsError::IoError)?
+            .to_string()
+            .change_context(TmsError::IoError)?
+    };
+
+    if !args.delete {
+        config.add_bookmark(path);
+    } else {
+        config.delete_bookmark(path);
+    }
+
+    config.save().change_context(TmsError::ConfigError)?;
+
+    Ok(())
 }
 
 pub enum SubCommandGiven {

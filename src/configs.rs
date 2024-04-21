@@ -1,11 +1,11 @@
 use clap::ValueEnum;
 use error_stack::ResultExt;
 use serde_derive::{Deserialize, Serialize};
-use std::{env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
+use std::{collections::HashMap, env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
 
 use ratatui::style::{Color, Style};
 
-use crate::{keymap::Keymap, Suggestion};
+use crate::{dirty_paths::DirtyUtf8Path, keymap::Keymap, Suggestion};
 
 type Result<T> = error_stack::Result<T, ConfigError>;
 
@@ -46,6 +46,7 @@ pub struct Config {
     pub sessions: Option<Vec<Session>>,
     pub picker_colors: Option<PickerColorConfig>,
     pub shortcuts: Option<Keymap>,
+    pub bookmarks: Option<Vec<String>>,
 }
 
 impl Config {
@@ -179,6 +180,53 @@ impl Config {
         }
 
         Ok(search_dirs)
+    }
+
+    pub fn add_bookmark(&mut self, path: String) {
+        let bookmarks = &mut self.bookmarks;
+        match bookmarks {
+            Some(ref mut bookmarks) => {
+                if !bookmarks.contains(&path) {
+                    bookmarks.push(path);
+                }
+            }
+            None => {
+                self.bookmarks = Some(vec![path]);
+            }
+        }
+    }
+
+    pub fn delete_bookmark(&mut self, path: String) {
+        if let Some(ref mut bookmarks) = self.bookmarks {
+            if let Some(idx) = bookmarks.iter().position(|bookmark| *bookmark == path) {
+                bookmarks.remove(idx);
+            }
+        }
+    }
+
+    pub fn bookmark_paths(&self) -> HashMap<String, PathBuf> {
+        let mut ret = HashMap::new();
+
+        if let Some(bookmarks) = &self.bookmarks {
+            for bookmark in bookmarks {
+                if let Ok(path) = PathBuf::from(bookmark).canonicalize() {
+                    let name = if let Some(true) = self.display_full_path {
+                        Some(path.display().to_string())
+                    } else {
+                        path.file_name()
+                            .expect("should end with a directory")
+                            .to_string()
+                            .ok()
+                    };
+
+                    if let Some(name) = name {
+                        ret.insert(name, path);
+                    }
+                }
+            }
+        }
+
+        ret
     }
 }
 
