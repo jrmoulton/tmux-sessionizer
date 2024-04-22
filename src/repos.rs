@@ -1,5 +1,5 @@
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
-use error_stack::{Result, ResultExt};
+use error_stack::ResultExt;
 use git2::{Repository, Submodule};
 use std::{
     collections::{HashMap, VecDeque},
@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-use crate::{configs::SearchDirectory, dirty_paths::DirtyUtf8Path, TmsError};
+use crate::{configs::SearchDirectory, dirty_paths::DirtyUtf8Path, Result, TmsError};
 
 pub trait RepoContainer {
     fn find_repo(&self, name: &str) -> Option<&Repository>;
@@ -38,7 +38,7 @@ pub fn find_repos(
     display_full_path: Option<bool>,
     search_submodules: Option<bool>,
     recursive_submodules: Option<bool>,
-) -> Result<impl RepoContainer, TmsError> {
+) -> Result<impl RepoContainer> {
     let mut repos = HashMap::new();
     let mut to_search = VecDeque::new();
 
@@ -95,7 +95,7 @@ pub fn find_repos(
     Ok(repos)
 }
 
-fn get_repo_name(path: &Path, repos: &impl RepoContainer) -> Result<String, TmsError> {
+fn get_repo_name(path: &Path, repos: &impl RepoContainer) -> Result<String> {
     let mut repo_name = path
         .file_name()
         .expect("The file name doesn't end in `..`")
@@ -124,7 +124,7 @@ fn find_submodules(
     repos: &mut impl RepoContainer,
     display_full_path: Option<bool>,
     recursive: Option<bool>,
-) -> Result<(), TmsError> {
+) -> Result<()> {
     for submodule in submodules.iter() {
         let repo = match submodule.open() {
             Ok(repo) => repo,

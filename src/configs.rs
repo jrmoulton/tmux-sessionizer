@@ -1,11 +1,13 @@
 use clap::ValueEnum;
-use error_stack::{Result, ResultExt};
+use error_stack::ResultExt;
 use serde_derive::{Deserialize, Serialize};
 use std::{env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
 
 use ratatui::style::{Color, Style};
 
-use crate::{keymap::Keymap, Suggestion, TmsError};
+use crate::{keymap::Keymap, Suggestion};
+
+type Result<T> = error_stack::Result<T, ConfigError>;
 
 #[derive(Debug)]
 pub enum ConfigError {
@@ -13,6 +15,7 @@ pub enum ConfigError {
     LoadError,
     TomlError,
     FileWriteError,
+    IoError,
 }
 
 impl std::error::Error for ConfigError {}
@@ -24,6 +27,7 @@ impl Display for ConfigError {
             Self::TomlError => write!(f, "Could not serialize config to TOML"),
             Self::FileWriteError => write!(f, "Could not write to config file"),
             Self::LoadError => write!(f, "Could not load configuration"),
+            Self::IoError => write!(f, "IO error"),
         }
     }
 }
@@ -45,7 +49,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub(crate) fn new() -> Result<Self, ConfigError> {
+    pub(crate) fn new() -> Result<Self> {
         let config_builder = match env::var("TMS_CONFIG_FILE") {
             Ok(path) => {
                 config::Config::builder().add_source(config::File::with_name(&path).required(false))
@@ -88,7 +92,7 @@ impl Config {
             .attach_printable("Could not deserialize configuration")
     }
 
-    pub(crate) fn save(&self) -> Result<(), ConfigError> {
+    pub(crate) fn save(&self) -> Result<()> {
         let toml_pretty = toml::to_string_pretty(self)
             .change_context(ConfigError::TomlError)?
             .into_bytes();
@@ -127,18 +131,18 @@ impl Config {
         Ok(())
     }
 
-    pub fn search_dirs(&self) -> Result<Vec<SearchDirectory>, TmsError> {
+    pub fn search_dirs(&self) -> Result<Vec<SearchDirectory>> {
         let mut search_dirs = if let Some(search_dirs) = self.search_dirs.as_ref() {
             search_dirs
                 .iter()
                 .map(|search_dir| {
                     let expanded_path = shellexpand::full(&search_dir.path.to_string_lossy())
-                        .change_context(TmsError::IoError)
+                        .change_context(ConfigError::IoError)
                         .unwrap()
                         .to_string();
 
                     let path = canonicalize(expanded_path)
-                        .change_context(TmsError::IoError)
+                        .change_context(ConfigError::IoError)
                         .unwrap();
 
                     SearchDirectory::new(path, search_dir.depth)
@@ -155,11 +159,11 @@ impl Config {
                     SearchDirectory::new(
                         canonicalize(
                             shellexpand::full(&path)
-                                .change_context(TmsError::IoError)
+                                .change_context(ConfigError::IoError)
                                 .unwrap()
                                 .to_string(),
                         )
-                        .change_context(TmsError::IoError)
+                        .change_context(ConfigError::IoError)
                         .unwrap(),
                         10,
                     )
@@ -171,8 +175,7 @@ impl Config {
             return Err(ConfigError::NoDefaultSearchPath)
             .attach_printable(
                 "You must configure at least one default search path with the `config` subcommand. E.g `tms config` ",
-            )
-            .change_context(TmsError::ConfigError);
+            );
         }
 
         Ok(search_dirs)

@@ -1,5 +1,7 @@
 use std::{error::Error, fmt::Display};
 
+pub type Result<T> = error_stack::Result<T, TmsError>;
+
 #[derive(Debug)]
 pub enum TmsError {
     GitError,
