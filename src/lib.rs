@@ -107,7 +107,7 @@ pub fn get_single_selection(
 ) -> Result<Option<String>> {
     let mut picker = Picker::new(list, preview, keymap, tmux).set_colors(colors);
 
-    Ok(picker.run()?)
+    picker.run()
 }
 #[derive(Debug)]
 pub struct Suggestion(&'static str);
