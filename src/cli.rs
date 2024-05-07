@@ -8,10 +8,10 @@ use crate::{
     repos::{find_repos, RepoContainer},
     session_exists, set_up_tmux_env, switch_to_session,
     tmux::Tmux,
-    TmsError,
+    Result, TmsError,
 };
 use clap::{Args, Parser, Subcommand};
-use error_stack::{Result, ResultExt};
+use error_stack::ResultExt;
 use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
 
 #[derive(Debug, Parser)]
@@ -115,7 +115,7 @@ pub struct CloneRepoCommand {
 }
 
 impl Cli {
-    pub fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven, TmsError> {
+    pub fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven> {
         // Get the configuration from the config file
         let config = Config::new().change_context(TmsError::ConfigError)?;
 
@@ -174,7 +174,7 @@ impl Cli {
     }
 }
 
-fn start_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
+fn start_command(config: Config, tmux: &Tmux) -> Result<()> {
     if let Some(sessions) = &config.sessions {
         for session in sessions {
             let session_path = session
@@ -212,7 +212,7 @@ fn start_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
     Ok(())
 }
 
-fn switch_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
+fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
     let sessions = tmux
         .list_sessions("'#{?session_attached,,#{session_name}#,#{session_last_attached}}'")
         .replace('\'', "")
@@ -231,7 +231,7 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
     let mut sessions: Vec<String> = sessions.into_iter().map(|s| s.0.to_string()).collect();
     if let Some(true) = config.switch_filter_unknown {
         let repos = find_repos(
-            config.search_dirs()?,
+            config.search_dirs().change_context(TmsError::ConfigError)?,
             config.excluded_dirs,
             config.display_full_path,
             config.search_submodules,
@@ -257,7 +257,7 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
     Ok(())
 }
 
-fn windows_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
+fn windows_command(config: Config, tmux: &Tmux) -> Result<()> {
     let windows = tmux.list_windows("'#{?window_attached,,#{window_name}}'", None);
 
     let windows: Vec<String> = windows
@@ -280,7 +280,7 @@ fn windows_command(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
     Ok(())
 }
 
-fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsError> {
+fn config_command(args: &ConfigCommand, mut config: Config) -> Result<()> {
     let max_depths = args.max_depths.clone().unwrap_or_default();
     config.search_dirs = match &args.search_paths {
         Some(paths) => Some(
@@ -299,14 +299,14 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsErr
                         .map(|val| (val.to_string(), depth))
                         .change_context(TmsError::IoError)
                 })
-                .collect::<Result<Vec<(String, usize)>, TmsError>>()?
+                .collect::<Result<Vec<(String, usize)>>>()?
                 .iter()
                 .map(|(path, depth)| {
                     canonicalize(path)
                         .map(|val| SearchDirectory::new(val, *depth))
                         .change_context(TmsError::IoError)
                 })
-                .collect::<Result<Vec<SearchDirectory>, TmsError>>()?,
+                .collect::<Result<Vec<SearchDirectory>>>()?,
         ),
         None => config.search_dirs,
     };
@@ -393,7 +393,7 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<(), TmsErr
     Ok(())
 }
 
-fn kill_subcommand(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
+fn kill_subcommand(config: Config, tmux: &Tmux) -> Result<()> {
     let mut current_session = tmux.display_message("'#S'");
     current_session.retain(|x| x != '\'' && x != '\n');
 
@@ -430,7 +430,7 @@ fn kill_subcommand(config: Config, tmux: &Tmux) -> Result<(), TmsError> {
     Ok(())
 }
 
-fn sessions_subcommand(tmux: &Tmux) -> Result<(), TmsError> {
+fn sessions_subcommand(tmux: &Tmux) -> Result<()> {
     let mut current_session = tmux.display_message("'#S'");
     current_session.retain(|x| x != '\'' && x != '\n');
     let current_session_star = format!("{current_session}*");
@@ -458,7 +458,7 @@ fn sessions_subcommand(tmux: &Tmux) -> Result<(), TmsError> {
     Ok(())
 }
 
-fn rename_subcommand(args: &RenameCommand, tmux: &Tmux) -> Result<(), TmsError> {
+fn rename_subcommand(args: &RenameCommand, tmux: &Tmux) -> Result<()> {
     let new_session_name = &args.name;
 
     let current_session = tmux.display_message("'#S'");
@@ -513,7 +513,7 @@ fn rename_subcommand(args: &RenameCommand, tmux: &Tmux) -> Result<(), TmsError> 
     Ok(())
 }
 
-fn refresh_command(args: &RefreshCommand, tmux: &Tmux) -> Result<(), TmsError> {
+fn refresh_command(args: &RefreshCommand, tmux: &Tmux) -> Result<()> {
     let session_name = args
         .name
         .clone()
@@ -569,11 +569,7 @@ fn refresh_command(args: &RefreshCommand, tmux: &Tmux) -> Result<(), TmsError> {
     Ok(())
 }
 
-fn clone_repo_command(
-    args: &CloneRepoCommand,
-    config: Config,
-    tmux: &Tmux,
-) -> Result<(), TmsError> {
+fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
     let search_dirs = config
         .search_dirs
         .ok_or(TmsError::ConfigError)
@@ -615,7 +611,7 @@ fn clone_repo_command(
     Ok(())
 }
 
-fn git_clone(repo: &str, target: &Path) -> Result<Repository, TmsError> {
+fn git_clone(repo: &str, target: &Path) -> Result<Repository> {
     let mut callbacks = RemoteCallbacks::new();
     callbacks.credentials(git_credentials_callback);
     let mut fo = FetchOptions::new();

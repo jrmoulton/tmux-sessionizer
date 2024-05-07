@@ -1,10 +1,10 @@
 use clap::Parser;
-use error_stack::{Report, Result, ResultExt};
+use error_stack::{Report, ResultExt};
 
 use tms::{
     cli::{Cli, SubCommandGiven},
     dirty_paths::DirtyUtf8Path,
-    error::TmsError,
+    error::{Result, TmsError},
     get_single_selection,
     picker::Preview,
     repos::find_repos,
@@ -14,7 +14,7 @@ use tms::{
     Suggestion,
 };
 
-fn main() -> Result<(), TmsError> {
+fn main() -> Result<()> {
     // Install debug hooks for formatting of error handling
     Report::install_debug_hook::<Suggestion>(|value, context| {
         context.push_body(format!("{value}"));
@@ -34,7 +34,7 @@ fn main() -> Result<(), TmsError> {
 
     // Find repositories and present them with the fuzzy finder
     let repos = find_repos(
-        config.search_dirs()?,
+        config.search_dirs().change_context(TmsError::ConfigError)?,
         config.excluded_dirs,
         config.display_full_path,
         config.search_submodules,

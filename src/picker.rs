@@ -30,7 +30,7 @@ use crate::{
     configs::PickerColorConfig,
     keymap::{default_keymap, Keymap, PickerAction},
     tmux::Tmux,
-    TmsError,
+    Result, TmsError,
 };
 
 pub enum Preview {
@@ -87,7 +87,7 @@ impl Picker {
         self
     }
 
-    pub fn run(&mut self) -> Result<Option<String>, TmsError> {
+    pub fn run(&mut self) -> Result<Option<String>> {
         enable_raw_mode().map_err(|e| TmsError::TuiError(e.to_string()))?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen).map_err(|e| TmsError::TuiError(e.to_string()))?;
@@ -111,7 +111,7 @@ impl Picker {
     fn main_loop(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    ) -> Result<Option<String>, TmsError> {
+    ) -> Result<Option<String>> {
         loop {
             terminal
                 .draw(|f| self.render(f))

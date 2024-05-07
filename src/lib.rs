@@ -7,14 +7,14 @@ pub mod picker;
 pub mod repos;
 pub mod tmux;
 
-use error_stack::{Result, ResultExt};
+use error_stack::ResultExt;
 use git2::Repository;
 use std::{fmt::Display, process};
 
 use crate::{
     configs::PickerColorConfig,
     dirty_paths::DirtyUtf8Path,
-    error::TmsError,
+    error::{Result, TmsError},
     keymap::Keymap,
     picker::{Picker, Preview},
     tmux::Tmux,
@@ -43,7 +43,7 @@ pub fn session_exists(repo_short_name: &str, tmux: &Tmux) -> bool {
     })
 }
 
-pub fn set_up_tmux_env(repo: &Repository, repo_name: &str, tmux: &Tmux) -> Result<(), TmsError> {
+pub fn set_up_tmux_env(repo: &Repository, repo_name: &str, tmux: &Tmux) -> Result<()> {
     if repo.is_bare() {
         if repo
             .worktrees()
@@ -104,10 +104,10 @@ pub fn get_single_selection(
     colors: Option<PickerColorConfig>,
     keymap: Option<Keymap>,
     tmux: Tmux,
-) -> Result<Option<String>, TmsError> {
+) -> Result<Option<String>> {
     let mut picker = Picker::new(list, preview, keymap, tmux).set_colors(colors);
 
-    Ok(picker.run()?)
+    picker.run()
 }
 #[derive(Debug)]
 pub struct Suggestion(&'static str);
