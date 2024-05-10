@@ -12,6 +12,7 @@ type Result<T> = error_stack::Result<T, ConfigError>;
 #[derive(Debug)]
 pub enum ConfigError {
     NoDefaultSearchPath,
+    NoValidSearchPath,
     LoadError,
     TomlError,
     FileWriteError,
@@ -24,6 +25,7 @@ impl Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoDefaultSearchPath => write!(f, "No default search path was found"),
+            Self::NoValidSearchPath => write!(f, "No valid search path was found"),
             Self::TomlError => write!(f, "Could not serialize config to TOML"),
             Self::FileWriteError => write!(f, "Could not write to config file"),
             Self::LoadError => write!(f, "Could not load configuration"),
@@ -136,46 +138,48 @@ impl Config {
     }
 
     pub fn search_dirs(&self) -> Result<Vec<SearchDirectory>> {
+        if self.search_dirs.as_ref().map_or(true, Vec::is_empty)
+            && self.search_paths.as_ref().map_or(true, Vec::is_empty)
+        {
+            return Err(ConfigError::NoDefaultSearchPath)
+            .attach_printable(
+                "You must configure at least one default search path with the `config` subcommand. E.g `tms config` ",
+            );
+        }
+
         let mut search_dirs = if let Some(search_dirs) = self.search_dirs.as_ref() {
             search_dirs
                 .iter()
-                .map(|search_dir| {
+                .filter_map(|search_dir| {
                     let expanded_path = shellexpand::full(&search_dir.path.to_string_lossy())
-                        .change_context(ConfigError::IoError)?
+                        .ok()?
                         .to_string();
 
-                    let path = canonicalize(expanded_path).change_context(ConfigError::IoError)?;
+                    let path = canonicalize(expanded_path).ok()?;
 
-                    Ok(SearchDirectory::new(path, search_dir.depth))
+                    Some(SearchDirectory::new(path, search_dir.depth))
                 })
-                .collect::<Result<_>>()
+                .collect()
         } else {
-            Ok(Vec::new())
-        }?;
+            Vec::new()
+        };
 
         // merge old search paths with new search directories
         if let Some(search_paths) = self.search_paths.as_ref() {
             if !search_paths.is_empty() {
-                search_dirs.extend(search_paths.iter().map(|path| {
-                    SearchDirectory::new(
-                        canonicalize(
-                            shellexpand::full(&path)
-                                .change_context(ConfigError::IoError)
-                                .unwrap()
-                                .to_string(),
-                        )
-                        .change_context(ConfigError::IoError)
-                        .unwrap(),
-                        10,
-                    )
+                search_dirs.extend(search_paths.iter().filter_map(|path| {
+                    let expanded_path = shellexpand::full(&path).ok()?.to_string();
+                    let path = canonicalize(expanded_path).ok()?;
+
+                    Some(SearchDirectory::new(path, 10))
                 }));
             }
         }
 
         if search_dirs.is_empty() {
-            return Err(ConfigError::NoDefaultSearchPath)
+            return Err(ConfigError::NoValidSearchPath)
             .attach_printable(
-                "You must configure at least one default search path with the `config` subcommand. E.g `tms config` ",
+                "You must configure at least one valid search path with the `config` subcommand. E.g `tms config` "
             );
         }
 
