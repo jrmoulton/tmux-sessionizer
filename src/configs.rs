@@ -132,20 +132,26 @@ impl Config {
     }
 
     pub fn search_dirs(&self) -> Result<Vec<SearchDirectory>> {
+        if self.search_dirs.as_ref().map_or(true, Vec::is_empty)
+            && self.search_paths.as_ref().map_or(true, Vec::is_empty)
+        {
+            return Err(ConfigError::NoDefaultSearchPath)
+            .attach_printable(
+                "You must configure at least one default search path with the `config` subcommand. E.g `tms config` ",
+            );
+        }
+
         let mut search_dirs = if let Some(search_dirs) = self.search_dirs.as_ref() {
             search_dirs
                 .iter()
-                .map(|search_dir| {
+                .filter_map(|search_dir| {
                     let expanded_path = shellexpand::full(&search_dir.path.to_string_lossy())
-                        .change_context(ConfigError::IoError)
-                        .unwrap()
+                        .ok()?
                         .to_string();
 
-                    let path = canonicalize(expanded_path)
-                        .change_context(ConfigError::IoError)
-                        .unwrap();
+                    let path = canonicalize(expanded_path).ok()?;
 
-                    SearchDirectory::new(path, search_dir.depth)
+                    Some(SearchDirectory::new(path, search_dir.depth))
                 })
                 .collect()
         } else {
@@ -155,27 +161,13 @@ impl Config {
         // merge old search paths with new search directories
         if let Some(search_paths) = self.search_paths.as_ref() {
             if !search_paths.is_empty() {
-                search_dirs.extend(search_paths.iter().map(|path| {
-                    SearchDirectory::new(
-                        canonicalize(
-                            shellexpand::full(&path)
-                                .change_context(ConfigError::IoError)
-                                .unwrap()
-                                .to_string(),
-                        )
-                        .change_context(ConfigError::IoError)
-                        .unwrap(),
-                        10,
-                    )
+                search_dirs.extend(search_paths.iter().filter_map(|path| {
+                    let expanded_path = shellexpand::full(&path).ok()?.to_string();
+                    let path = canonicalize(expanded_path).ok()?;
+
+                    Some(SearchDirectory::new(path, 10))
                 }));
             }
-        }
-
-        if search_dirs.is_empty() {
-            return Err(ConfigError::NoDefaultSearchPath)
-            .attach_printable(
-                "You must configure at least one default search path with the `config` subcommand. E.g `tms config` ",
-            );
         }
 
         Ok(search_dirs)
