@@ -258,7 +258,10 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
 }
 
 fn windows_command(config: Config, tmux: &Tmux) -> Result<()> {
-    let windows = tmux.list_windows("'#{?window_attached,,#{window_name}}'", None);
+    let windows = tmux.list_windows(
+        "'#{?window_attached,,#{window_index} #{window_name}}'",
+        None,
+    );
 
     let windows: Vec<String> = windows
         .replace('\'', "")
@@ -275,7 +278,9 @@ fn windows_command(config: Config, tmux: &Tmux) -> Result<()> {
         config.shortcuts,
         tmux.clone(),
     )? {
-        tmux.select_window(&target_window.replace('.', "_"));
+        if let Some((windex, _)) = target_window.split_once(' ') {
+            tmux.select_window(windex);
+        }
     }
     Ok(())
 }
