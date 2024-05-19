@@ -84,8 +84,9 @@ pub fn find_repos(
             }
             repos.insert_repo(name, repo);
         } else if file.path.is_dir() && file.depth > 0 {
-            let read_dir = fs::read_dir(file.path)
-                .change_context(TmsError::IoError)?
+            let read_dir = fs::read_dir(&file.path)
+                .change_context(TmsError::IoError)
+                .attach_printable_lazy(|| format!("Could not read directory {:?}", file.path))?
                 .map(|dir_entry| dir_entry.expect("Found non-valid utf8 path").path());
             for dir in read_dir {
                 to_search.push_back(SearchDirectory::new(dir, file.depth - 1))
