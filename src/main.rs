@@ -1,6 +1,9 @@
+use std::{collections::HashMap, path::PathBuf};
+
 use clap::Parser;
 use error_stack::{Report, ResultExt};
 
+use git2::Repository;
 use tms::{
     cli::{Cli, SubCommandGiven},
     dirty_paths::DirtyUtf8Path,
@@ -32,6 +35,8 @@ fn main() -> Result<()> {
         SubCommandGiven::No(config) => config, // continue
     };
 
+    let bookmarks = config.bookmark_paths();
+
     // Find repositories and present them with the fuzzy finder
     let repos = find_repos(
         config.search_dirs().change_context(TmsError::ConfigError)?,
@@ -41,8 +46,12 @@ fn main() -> Result<()> {
         config.recursive_submodules,
     )?;
 
-    let repo_name = if let Some(str) = get_single_selection(
-        &repos.list(),
+    let mut dirs = repos.list();
+
+    dirs.append(&mut bookmarks.keys().map(|b| b.to_string()).collect());
+
+    let selected_str = if let Some(str) = get_single_selection(
+        &dirs,
         Preview::None,
         config.picker_colors,
         config.shortcuts,
@@ -53,9 +62,21 @@ fn main() -> Result<()> {
         return Ok(());
     };
 
-    let found_repo = repos
-        .find_repo(&repo_name)
-        .expect("The internal representation of the selected repository should be present");
+    if let Some(found_repo) = repos.find_repo(&selected_str) {
+        switch_to_repo_session(selected_str, found_repo, &tmux, config.display_full_path)?;
+    } else {
+        switch_to_bookmark_session(selected_str, &tmux, bookmarks)?;
+    }
+
+    Ok(())
+}
+
+fn switch_to_repo_session(
+    selected_str: String,
+    found_repo: &Repository,
+    tmux: &Tmux,
+    display_full_path: Option<bool>,
+) -> Result<()> {
     let path = if found_repo.is_bare() {
         found_repo.path().to_string()?
     } else {
@@ -66,22 +87,43 @@ fn main() -> Result<()> {
             .change_context(TmsError::IoError)?
             .to_string()?
     };
-    let repo_short_name = (if config.display_full_path == Some(true) {
-        std::path::PathBuf::from(&repo_name)
+    let repo_short_name = (if display_full_path == Some(true) {
+        std::path::PathBuf::from(&selected_str)
             .file_name()
             .expect("None of the paths here should terminate in `..`")
             .to_string()?
     } else {
-        repo_name
+        selected_str
     })
     .replace('.', "_");
 
-    if !session_exists(&repo_short_name, &tmux) {
+    if !session_exists(&repo_short_name, tmux) {
         tmux.new_session(Some(&repo_short_name), Some(&path));
-        set_up_tmux_env(found_repo, &repo_short_name, &tmux)?;
+        set_up_tmux_env(found_repo, &repo_short_name, tmux)?;
     }
 
-    switch_to_session(&repo_short_name, &tmux);
+    switch_to_session(&repo_short_name, tmux);
+
+    Ok(())
+}
+
+fn switch_to_bookmark_session(
+    selected_str: String,
+    tmux: &Tmux,
+    bookmarks: HashMap<String, PathBuf>,
+) -> Result<()> {
+    let path = &bookmarks[&selected_str];
+    let session_name = path
+        .file_name()
+        .expect("Bookmarks should not end in `..`")
+        .to_string()?
+        .replace('.', "_");
+
+    if !session_exists(&session_name, tmux) {
+        tmux.new_session(Some(&session_name), path.to_str());
+    }
+
+    switch_to_session(&session_name, tmux);
 
     Ok(())
 }
