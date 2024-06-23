@@ -1,88 +1,58 @@
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use error_stack::ResultExt;
-use git2::{Repository, Submodule};
+use git2::Submodule;
 use std::{
     collections::{HashMap, VecDeque},
     fs,
-    path::Path,
 };
 
-use crate::{configs::SearchDirectory, dirty_paths::DirtyUtf8Path, Result, TmsError};
+use crate::{
+    configs::{Config, SearchDirectory},
+    dirty_paths::DirtyUtf8Path,
+    session::{Session, SessionContainer, SessionType},
+    Result, TmsError,
+};
 
-pub trait RepoContainer {
-    fn find_repo(&self, name: &str) -> Option<&Repository>;
-    fn insert_repo(&mut self, name: String, repo: Repository);
-    fn list(&self) -> Vec<String>;
-}
+pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
+    let directories = config.search_dirs().change_context(TmsError::ConfigError)?;
+    let mut repos: HashMap<String, Vec<Session>> = HashMap::new();
+    let mut to_search: VecDeque<SearchDirectory> = directories.into();
 
-impl RepoContainer for HashMap<String, Repository> {
-    fn find_repo(&self, name: &str) -> Option<&Repository> {
-        self.get(name)
-    }
-
-    fn insert_repo(&mut self, name: String, repo: Repository) {
-        self.insert(name, repo);
-    }
-
-    fn list(&self) -> Vec<String> {
-        let mut list: Vec<String> = self.keys().map(|s| s.to_owned()).collect();
-        list.sort();
-
-        list
-    }
-}
-
-pub fn find_repos(
-    directories: Vec<SearchDirectory>,
-    excluded_dirs: Option<Vec<String>>,
-    display_full_path: Option<bool>,
-    search_submodules: Option<bool>,
-    recursive_submodules: Option<bool>,
-) -> Result<impl RepoContainer> {
-    let mut repos = HashMap::new();
-    let mut to_search = VecDeque::new();
-
-    for search_directory in directories {
-        to_search.push_back(search_directory);
-    }
-
-    let excluded_dirs = match excluded_dirs {
-        Some(excluded_dirs) => excluded_dirs,
-        None => Vec::new(),
+    let excluder = if let Some(excluded_dirs) = &config.excluded_dirs {
+        Some(
+            AhoCorasickBuilder::new()
+                .match_kind(MatchKind::LeftmostFirst)
+                .build(excluded_dirs)
+                .change_context(TmsError::IoError)?,
+        )
+    } else {
+        None
     };
-    let excluder = AhoCorasickBuilder::new()
-        .match_kind(MatchKind::LeftmostFirst)
-        .build(excluded_dirs)
-        .change_context(TmsError::IoError)?;
-    while let Some(file) = to_search.pop_front() {
-        if excluder.is_match(&file.path.to_string()?) {
-            continue;
-        }
 
-        let file_name = get_repo_name(&file.path, &repos)?;
+    while let Some(file) = to_search.pop_front() {
+        if let Some(ref excluder) = excluder {
+            if excluder.is_match(&file.path.to_string()?) {
+                continue;
+            }
+        }
 
         if let Ok(repo) = git2::Repository::open(file.path.clone()) {
             if repo.is_worktree() {
                 continue;
             }
-            let name = if let Some(true) = display_full_path {
-                file.path.to_string()?
-            } else {
-                file_name
-            };
 
-            if search_submodules == Some(true) {
-                if let Ok(submodules) = repo.submodules() {
-                    find_submodules(
-                        submodules,
-                        &name,
-                        &mut repos,
-                        display_full_path,
-                        recursive_submodules,
-                    )?;
-                }
+            let session_name = file
+                .path
+                .file_name()
+                .expect("The file name doesn't end in `..`")
+                .to_string()?;
+
+            let session = Session::new(session_name, SessionType::Git(repo));
+            if let Some(list) = repos.get_mut(&session.name) {
+                list.push(session);
+            } else {
+                repos.insert(session.name.clone(), vec![session]);
             }
-            repos.insert_repo(name, repo);
         } else if file.path.is_dir() && file.depth > 0 {
             let read_dir = fs::read_dir(&file.path)
                 .change_context(TmsError::IoError)
@@ -96,35 +66,11 @@ pub fn find_repos(
     Ok(repos)
 }
 
-fn get_repo_name(path: &Path, repos: &impl RepoContainer) -> Result<String> {
-    let mut repo_name = path
-        .file_name()
-        .expect("The file name doesn't end in `..`")
-        .to_string()?;
-
-    repo_name = if repos.find_repo(&repo_name).is_some() {
-        if let Some(parent) = path.parent() {
-            if let Some(parent) = parent.file_name() {
-                format!("{}/{}", parent.to_string()?, repo_name)
-            } else {
-                repo_name
-            }
-        } else {
-            repo_name
-        }
-    } else {
-        repo_name
-    };
-
-    Ok(repo_name)
-}
-
-fn find_submodules(
+pub fn find_submodules(
     submodules: Vec<Submodule>,
     parent_name: &String,
-    repos: &mut impl RepoContainer,
-    display_full_path: Option<bool>,
-    recursive: Option<bool>,
+    repos: &mut impl SessionContainer,
+    config: &Config,
 ) -> Result<()> {
     for submodule in submodules.iter() {
         let repo = match submodule.open() {
@@ -139,18 +85,20 @@ fn find_submodules(
             .file_name()
             .expect("The file name doesn't end in `..`")
             .to_string()?;
-        let name = if let Some(true) = display_full_path {
-            path.to_string()?
+        let session_name = format!("{}>{}", parent_name, submodule_file_name);
+        let name = if let Some(true) = config.display_full_path {
+            path.display().to_string()
         } else {
-            format!("{}>{}", parent_name, submodule_file_name)
+            session_name.clone()
         };
 
-        if recursive == Some(true) {
+        if config.recursive_submodules == Some(true) {
             if let Ok(submodules) = repo.submodules() {
-                find_submodules(submodules, &name, repos, display_full_path, recursive)?;
+                find_submodules(submodules, &name, repos, config)?;
             }
         }
-        repos.insert_repo(name, repo);
+        let session = Session::new(session_name, SessionType::Git(repo));
+        repos.insert_session(name, session);
     }
     Ok(())
 }

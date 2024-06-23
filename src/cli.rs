@@ -5,7 +5,7 @@ use crate::{
     dirty_paths::DirtyUtf8Path,
     execute_command, get_single_selection,
     picker::Preview,
-    repos::{find_repos, RepoContainer},
+    session::{create_sessions, SessionContainer},
     session_exists, set_up_tmux_env, switch_to_session,
     tmux::Tmux,
     Result, TmsError,
@@ -246,17 +246,11 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
 
     let mut sessions: Vec<String> = sessions.into_iter().map(|s| s.0.to_string()).collect();
     if let Some(true) = config.switch_filter_unknown {
-        let repos = find_repos(
-            config.search_dirs().change_context(TmsError::ConfigError)?,
-            config.excluded_dirs,
-            config.display_full_path,
-            config.search_submodules,
-            config.recursive_submodules,
-        )?;
+        let configured = create_sessions(&config)?;
 
         sessions = sessions
             .into_iter()
-            .filter(|session| repos.find_repo(session).is_some())
+            .filter(|session| configured.find_session(session).is_some())
             .collect::<Vec<String>>();
     }
 
