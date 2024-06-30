@@ -1,11 +1,11 @@
 use clap::ValueEnum;
 use error_stack::ResultExt;
 use serde_derive::{Deserialize, Serialize};
-use std::{collections::HashMap, env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
+use std::{env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
 
 use ratatui::style::{Color, Style};
 
-use crate::{dirty_paths::DirtyUtf8Path, keymap::Keymap, Suggestion};
+use crate::{keymap::Keymap, Suggestion};
 
 type Result<T> = error_stack::Result<T, ConfigError>;
 
@@ -204,29 +204,25 @@ impl Config {
         }
     }
 
-    pub fn bookmark_paths(&self) -> HashMap<String, PathBuf> {
-        let mut ret = HashMap::new();
-
+    pub fn bookmark_paths(&self) -> Vec<PathBuf> {
         if let Some(bookmarks) = &self.bookmarks {
-            for bookmark in bookmarks {
-                if let Ok(path) = PathBuf::from(bookmark).canonicalize() {
-                    let name = if let Some(true) = self.display_full_path {
-                        Some(path.display().to_string())
+            bookmarks
+                .iter()
+                .filter_map(|b| {
+                    if let Ok(expanded) = shellexpand::full(b) {
+                        if let Ok(path) = PathBuf::from(expanded.to_string()).canonicalize() {
+                            Some(path)
+                        } else {
+                            None
+                        }
                     } else {
-                        path.file_name()
-                            .expect("should end with a directory")
-                            .to_string()
-                            .ok()
-                    };
-
-                    if let Some(name) = name {
-                        ret.insert(name, path);
+                        None
                     }
-                }
-            }
+                })
+                .collect()
+        } else {
+            Vec::new()
         }
-
-        ret
     }
 }
 

@@ -5,6 +5,7 @@ pub mod error;
 pub mod keymap;
 pub mod picker;
 pub mod repos;
+pub mod session;
 pub mod tmux;
 
 use error_stack::ResultExt;
