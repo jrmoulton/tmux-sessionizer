@@ -24,3 +24,12 @@ impl Display for TmsError {
 }
 
 impl Error for TmsError {}
+
+#[derive(Debug)]
+pub struct Suggestion(pub &'static str);
+impl Display for Suggestion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crossterm::style::Stylize;
+        f.write_str(&format!("Suggestion: {}", self.0).green().bold().to_string())
+    }
+}

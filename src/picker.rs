@@ -38,21 +38,21 @@ pub enum Preview {
     None,
 }
 
-pub struct Picker {
+pub struct Picker<'a> {
     matcher: Nucleo<String>,
     preview: Preview,
 
-    colors: Option<PickerColorConfig>,
+    colors: Option<&'a PickerColorConfig>,
 
     selection: ListState,
     filter: String,
     cursor_pos: u16,
     keymap: Keymap,
-    tmux: Tmux,
+    tmux: &'a Tmux,
 }
 
-impl Picker {
-    pub fn new(list: &[String], preview: Preview, keymap: Option<Keymap>, tmux: Tmux) -> Self {
+impl<'a> Picker<'a> {
+    pub fn new(list: &[String], preview: Preview, keymap: Option<&Keymap>, tmux: &'a Tmux) -> Self {
         let matcher = Nucleo::new(nucleo::Config::DEFAULT, Arc::new(request_redraw), None, 1);
 
         let injector = matcher.injector();
@@ -81,7 +81,7 @@ impl Picker {
         }
     }
 
-    pub fn set_colors(mut self, colors: Option<PickerColorConfig>) -> Self {
+    pub fn set_colors(mut self, colors: Option<&'a PickerColorConfig>) -> Self {
         self.colors = colors;
 
         self
