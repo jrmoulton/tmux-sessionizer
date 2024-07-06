@@ -10,7 +10,8 @@ use crate::{
     tmux::Tmux,
     Result, TmsError,
 };
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Command, CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Generator, Shell};
 use error_stack::ResultExt;
 use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
 
@@ -18,6 +19,8 @@ use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
 #[command(author, version)]
 ///Scan for all git folders in specified directorires, select one and open it as a new tmux session
 pub struct Cli {
+    #[arg(long = "generate", value_enum)]
+    generator: Option<Shell>,
     #[command(subcommand)]
     command: Option<CliCommand>,
 }
@@ -127,6 +130,12 @@ pub struct BookmarkCommand {
 
 impl Cli {
     pub fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven> {
+        if let Some(generator) = self.generator {
+            let mut cmd = Cli::command();
+            print_completions(generator, &mut cmd);
+            return Ok(SubCommandGiven::Yes);
+        }
+
         // Get the configuration from the config file
         let config = Config::new().change_context(TmsError::ConfigError)?;
 
@@ -671,6 +680,19 @@ fn bookmark_command(args: &BookmarkCommand, mut config: Config) -> Result<()> {
     config.save().change_context(TmsError::ConfigError)?;
 
     Ok(())
+}
+
+fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
+    let name = if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe) = exe.file_name() {
+            exe.to_string_lossy().to_string()
+        } else {
+            cmd.get_name().to_string()
+        }
+    } else {
+        cmd.get_name().to_string()
+    };
+    generate(gen, cmd, name, &mut std::io::stdout());
 }
 
 pub enum SubCommandGiven {
