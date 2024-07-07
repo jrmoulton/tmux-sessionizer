@@ -1,5 +1,13 @@
 use std::{env, process};
 
+use error_stack::ResultExt;
+use git2::Repository;
+
+use crate::{
+    dirty_paths::DirtyUtf8Path,
+    error::{Result, TmsError},
+};
+
 #[derive(Clone)]
 pub struct Tmux {
     socket_name: String,
@@ -85,6 +93,29 @@ impl Tmux {
         self.execute_tmux_command(&args)
     }
 
+    pub fn switch_to_session(&self, repo_short_name: &str) {
+        if !is_in_tmux_session() {
+            self.attach_session(Some(repo_short_name), None);
+        } else {
+            let result = self.switch_client(repo_short_name);
+            if !result.status.success() {
+                self.attach_session(Some(repo_short_name), None);
+            }
+        }
+    }
+
+    pub fn session_exists(&self, repo_short_name: &str) -> bool {
+        // Get the tmux sessions
+        let sessions = self.list_sessions("'#S'");
+
+        // If the session already exists switch to it, else create the new session and then switch
+        sessions.lines().any(|line| {
+            // tmux will return the output with extra ' and \n characters
+            line.to_owned().retain(|char| char != '\'' && char != '\n');
+            line == repo_short_name
+        })
+    }
+
     // windows
 
     pub fn new_window(
@@ -159,4 +190,50 @@ impl Tmux {
     pub fn capture_pane(&self, target_pane: &str) -> process::Output {
         self.execute_tmux_command(&["capture-pane", "-ep", "-t", target_pane])
     }
+
+    pub fn set_up_tmux_env(&self, repo: &Repository, repo_name: &str) -> Result<()> {
+        if repo.is_bare() {
+            if repo
+                .worktrees()
+                .change_context(TmsError::GitError)?
+                .is_empty()
+            {
+                // Add the default branch as a tree (usually either main or master)
+                let head = repo.head().change_context(TmsError::GitError)?;
+                let head_short = head
+                    .shorthand()
+                    .ok_or(TmsError::NonUtf8Path)
+                    .attach_printable("The selected repository has an unusable path")?;
+                let path = repo.path().to_path_buf().join(head_short);
+                repo.worktree(
+                    head_short,
+                    &path,
+                    Some(git2::WorktreeAddOptions::new().reference(Some(&head))),
+                )
+                .change_context(TmsError::GitError)?;
+            }
+            for tree in repo.worktrees().change_context(TmsError::GitError)?.iter() {
+                let tree = tree.ok_or(TmsError::NonUtf8Path).attach_printable(format!(
+                    "The path to the found sub-tree {tree:?} has a non-utf8 path",
+                ))?;
+                let window_name = tree.to_string();
+                let path_to_tree = repo
+                    .find_worktree(tree)
+                    .change_context(TmsError::GitError)?
+                    .path()
+                    .to_string()?;
+
+                self.new_window(Some(&window_name), Some(&path_to_tree), Some(repo_name));
+            }
+            // Kill that first extra window
+            self.kill_window(&format!("{repo_name}:^"));
+        } else {
+            // Extra stuff?? I removed launching python environments here but that could be exposed in the configuration
+        }
+        Ok(())
+    }
+}
+
+fn is_in_tmux_session() -> bool {
+    std::env::var("TERM_PROGRAM").is_ok_and(|program| program == "tmux")
 }

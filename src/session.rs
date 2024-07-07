@@ -11,7 +11,6 @@ use crate::{
     dirty_paths::DirtyUtf8Path,
     error::TmsError,
     repos::{find_repos, find_submodules},
-    session_exists, set_up_tmux_env, switch_to_session,
     tmux::Tmux,
     Result,
 };
@@ -209,12 +208,12 @@ fn switch_to_repo_session(selected_str: &str, found_repo: &Repository, tmux: &Tm
     };
     let repo_short_name = selected_str.replace('.', "_");
 
-    if !session_exists(&repo_short_name, tmux) {
+    if !tmux.session_exists(&repo_short_name) {
         tmux.new_session(Some(&repo_short_name), Some(&path));
-        set_up_tmux_env(found_repo, &repo_short_name, tmux)?;
+        tmux.set_up_tmux_env(found_repo, &repo_short_name)?;
     }
 
-    switch_to_session(&repo_short_name, tmux);
+    tmux.switch_to_session(&repo_short_name);
 
     Ok(())
 }
@@ -222,11 +221,11 @@ fn switch_to_repo_session(selected_str: &str, found_repo: &Repository, tmux: &Tm
 fn switch_to_bookmark_session(selected_str: &str, tmux: &Tmux, path: &Path) -> Result<()> {
     let session_name = selected_str.replace('.', "_");
 
-    if !session_exists(&session_name, tmux) {
+    if !tmux.session_exists(&session_name) {
         tmux.new_session(Some(&session_name), path.to_str());
     }
 
-    switch_to_session(&session_name, tmux);
+    tmux.switch_to_session(&session_name);
 
     Ok(())
 }

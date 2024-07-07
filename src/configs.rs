@@ -5,7 +5,7 @@ use std::{env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
 
 use ratatui::style::{Color, Style};
 
-use crate::{keymap::Keymap, Suggestion};
+use crate::{error::Suggestion, keymap::Keymap};
 
 type Result<T> = error_stack::Result<T, ConfigError>;
 

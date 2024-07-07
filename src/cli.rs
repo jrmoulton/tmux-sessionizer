@@ -6,7 +6,6 @@ use crate::{
     execute_command, get_single_selection,
     picker::Preview,
     session::{create_sessions, SessionContainer},
-    session_exists, set_up_tmux_env, switch_to_session,
     tmux::Tmux,
     Result, TmsError,
 };
@@ -151,7 +150,7 @@ impl Cli {
             }
 
             Some(CliCommand::Windows) => {
-                windows_command(config, tmux)?;
+                windows_command(&config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
             // Handle the config subcommand
@@ -263,20 +262,16 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
             .collect::<Vec<String>>();
     }
 
-    if let Some(target_session) = get_single_selection(
-        &sessions,
-        Preview::SessionPane,
-        config.picker_colors,
-        config.shortcuts,
-        tmux.clone(),
-    )? {
+    if let Some(target_session) =
+        get_single_selection(&sessions, Preview::SessionPane, &config, tmux)?
+    {
         tmux.switch_client(&target_session.replace('.', "_"));
     }
 
     Ok(())
 }
 
-fn windows_command(config: Config, tmux: &Tmux) -> Result<()> {
+fn windows_command(config: &Config, tmux: &Tmux) -> Result<()> {
     let windows = tmux.list_windows(
         "'#{?window_attached,,#{window_index} #{window_name}}'",
         None,
@@ -290,13 +285,8 @@ fn windows_command(config: Config, tmux: &Tmux) -> Result<()> {
         .map(|s| s.to_string())
         .collect();
 
-    if let Some(target_window) = get_single_selection(
-        &windows,
-        Preview::SessionPane,
-        config.picker_colors,
-        config.shortcuts,
-        tmux.clone(),
-    )? {
+    if let Some(target_window) = get_single_selection(&windows, Preview::SessionPane, config, tmux)?
+    {
         if let Some((windex, _)) = target_window.split_once(' ') {
             tmux.select_window(windex);
         }
@@ -616,7 +606,7 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
 
     let mut session_name = repo_name.to_string();
 
-    if session_exists(&session_name, tmux) {
+    if tmux.session_exists(&session_name) {
         session_name = format!(
             "{}/{}",
             path.parent()
@@ -629,8 +619,8 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
     }
 
     tmux.new_session(Some(&session_name), Some(&path.display().to_string()));
-    set_up_tmux_env(&repo, &session_name, tmux)?;
-    switch_to_session(&session_name, tmux);
+    tmux.set_up_tmux_env(&repo, &session_name)?;
+    tmux.switch_to_session(&session_name);
 
     Ok(())
 }

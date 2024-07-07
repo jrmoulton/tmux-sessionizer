@@ -3,12 +3,11 @@ use error_stack::Report;
 
 use tms::{
     cli::{Cli, SubCommandGiven},
-    error::Result,
+    error::{Result, Suggestion},
     get_single_selection,
     picker::Preview,
     session::{create_sessions, SessionContainer},
     tmux::Tmux,
-    Suggestion,
 };
 
 fn main() -> Result<()> {
@@ -32,17 +31,12 @@ fn main() -> Result<()> {
     let sessions = create_sessions(&config)?;
     let session_strings = sessions.list();
 
-    let selected_str = if let Some(str) = get_single_selection(
-        &session_strings,
-        Preview::None,
-        config.picker_colors,
-        config.shortcuts,
-        tmux.clone(),
-    )? {
-        str
-    } else {
-        return Ok(());
-    };
+    let selected_str =
+        if let Some(str) = get_single_selection(&session_strings, Preview::None, &config, &tmux)? {
+            str
+        } else {
+            return Ok(());
+        };
 
     if let Some(session) = sessions.find_session(&selected_str) {
         session.switch_to(&tmux)?;
