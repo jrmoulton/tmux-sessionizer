@@ -1,4 +1,4 @@
-use std::{env, process};
+use std::{env, os::unix::process::CommandExt, process};
 
 use error_stack::ResultExt;
 use git2::Repository;
@@ -33,6 +33,14 @@ impl Tmux {
             .stdin(process::Stdio::inherit())
             .output()
             .unwrap_or_else(|_| panic!("Failed to execute the tmux command `{args:?}`"))
+    }
+
+    fn replace_with_tmux_command(&self, args: &[&str]) -> std::io::Error {
+        process::Command::new("tmux")
+            .args(["-L", &self.socket_name])
+            .args(args)
+            .stdin(process::Stdio::inherit())
+            .exec()
     }
 
     fn stdout_to_string(output: process::Output) -> String {
@@ -75,11 +83,7 @@ impl Tmux {
         self.execute_tmux_command(&["rename-session", session_name])
     }
 
-    pub fn attach_session(
-        &self,
-        session_name: Option<&str>,
-        path: Option<&str>,
-    ) -> process::Output {
+    pub fn attach_session(&self, session_name: Option<&str>, path: Option<&str>) -> std::io::Error {
         let mut args = vec!["attach-session"];
 
         if let Some(name) = session_name {
@@ -90,7 +94,7 @@ impl Tmux {
             args.extend(["-c", path]);
         }
 
-        self.execute_tmux_command(&args)
+        self.replace_with_tmux_command(&args)
     }
 
     pub fn switch_to_session(&self, repo_short_name: &str) {
