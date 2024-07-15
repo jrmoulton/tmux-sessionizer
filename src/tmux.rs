@@ -196,7 +196,7 @@ impl Tmux {
     }
 
     pub fn set_up_tmux_env(&self, repo: &Repository, repo_name: &str) -> Result<()> {
-        if repo.is_bare() {
+        if repo.is_bare() && repo.head().is_ok() {
             if repo
                 .worktrees()
                 .change_context(TmsError::GitError)?
@@ -208,7 +208,7 @@ impl Tmux {
                     .shorthand()
                     .ok_or(TmsError::NonUtf8Path)
                     .attach_printable("The selected repository has an unusable path")?;
-                let path = repo.path().to_path_buf().join(head_short);
+                let path = repo.path().join(head_short);
                 repo.worktree(
                     head_short,
                     &path,
@@ -231,8 +231,6 @@ impl Tmux {
             }
             // Kill that first extra window
             self.kill_window(&format!("{repo_name}:^"));
-        } else {
-            // Extra stuff?? I removed launching python environments here but that could be exposed in the configuration
         }
         Ok(())
     }
