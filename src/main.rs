@@ -39,7 +39,7 @@ fn main() -> Result<()> {
         };
 
     if let Some(session) = sessions.find_session(&selected_str) {
-        session.switch_to(&tmux)?;
+        session.switch_to(&tmux, &config)?;
     }
 
     Ok(())

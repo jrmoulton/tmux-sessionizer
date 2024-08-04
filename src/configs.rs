@@ -1,7 +1,7 @@
 use clap::ValueEnum;
 use error_stack::ResultExt;
 use serde_derive::{Deserialize, Serialize};
-use std::{env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
+use std::{collections::HashMap, env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
 
 use ratatui::style::{Color, Style};
 
@@ -47,6 +47,7 @@ pub struct Config {
     pub picker_colors: Option<PickerColorConfig>,
     pub shortcuts: Option<Keymap>,
     pub bookmarks: Option<Vec<String>>,
+    pub session_configs: Option<HashMap<String, SessionConfig>>,
 }
 
 impl Config {
@@ -341,4 +342,9 @@ impl ValueEnum for SessionSortOrderConfig {
             }
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct SessionConfig {
+    pub create_script: Option<PathBuf>,
 }

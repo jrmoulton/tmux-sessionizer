@@ -38,11 +38,52 @@ impl Session {
         }
     }
 
-    pub fn switch_to(&self, tmux: &Tmux) -> Result<()> {
+    pub fn switch_to(&self, tmux: &Tmux, config: &Config) -> Result<()> {
         match &self.session_type {
-            SessionType::Git(repo) => switch_to_repo_session(&self.name, repo, tmux),
-            SessionType::Bookmark(path) => switch_to_bookmark_session(&self.name, tmux, path),
+            SessionType::Git(repo) => self.switch_to_repo_session(repo, tmux, config),
+            SessionType::Bookmark(path) => self.switch_to_bookmark_session(tmux, path, config),
         }
+    }
+
+    fn switch_to_repo_session(
+        &self,
+        repo: &Repository,
+        tmux: &Tmux,
+        config: &Config,
+    ) -> Result<()> {
+        let path = if repo.is_bare() {
+            repo.path().to_path_buf().to_string()?
+        } else {
+            repo.workdir()
+                .expect("bare repositories should all have parent directories")
+                .canonicalize()
+                .change_context(TmsError::IoError)?
+                .to_string()?
+        };
+        let session_name = self.name.replace('.', "_");
+
+        if !tmux.session_exists(&session_name) {
+            tmux.new_session(Some(&session_name), Some(&path));
+            tmux.set_up_tmux_env(repo, &session_name)?;
+            tmux.run_session_create_script(self.path(), &session_name, config)?;
+        }
+
+        tmux.switch_to_session(&session_name);
+
+        Ok(())
+    }
+
+    fn switch_to_bookmark_session(&self, tmux: &Tmux, path: &Path, config: &Config) -> Result<()> {
+        let session_name = self.name.replace('.', "_");
+
+        if !tmux.session_exists(&session_name) {
+            tmux.new_session(Some(&session_name), path.to_str());
+            tmux.run_session_create_script(path, &session_name, config)?;
+        }
+
+        tmux.switch_to_session(&session_name);
+
+        Ok(())
     }
 }
 
@@ -194,41 +235,6 @@ fn append_bookmarks(
     }
 
     Ok(sessions)
-}
-
-fn switch_to_repo_session(selected_str: &str, found_repo: &Repository, tmux: &Tmux) -> Result<()> {
-    let path = if found_repo.is_bare() {
-        found_repo.path().to_string()?
-    } else {
-        found_repo
-            .workdir()
-            .expect("bare repositories should all have parent directories")
-            .canonicalize()
-            .change_context(TmsError::IoError)?
-            .to_string()?
-    };
-    let repo_short_name = selected_str.replace('.', "_");
-
-    if !tmux.session_exists(&repo_short_name) {
-        tmux.new_session(Some(&repo_short_name), Some(&path));
-        tmux.set_up_tmux_env(found_repo, &repo_short_name)?;
-    }
-
-    tmux.switch_to_session(&repo_short_name);
-
-    Ok(())
-}
-
-fn switch_to_bookmark_session(selected_str: &str, tmux: &Tmux, path: &Path) -> Result<()> {
-    let session_name = selected_str.replace('.', "_");
-
-    if !tmux.session_exists(&session_name) {
-        tmux.new_session(Some(&session_name), path.to_str());
-    }
-
-    tmux.switch_to_session(&session_name);
-
-    Ok(())
 }
 
 #[cfg(test)]

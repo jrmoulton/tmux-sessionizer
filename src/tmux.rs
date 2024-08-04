@@ -1,9 +1,10 @@
-use std::{env, os::unix::process::CommandExt, process};
+use std::{env, os::unix::process::CommandExt, path::Path, process};
 
 use error_stack::ResultExt;
 use git2::Repository;
 
 use crate::{
+    configs::Config,
     dirty_paths::DirtyUtf8Path,
     error::{Result, TmsError},
 };
@@ -118,6 +119,37 @@ impl Tmux {
             line.to_owned().retain(|char| char != '\'' && char != '\n');
             line == repo_short_name
         })
+    }
+
+    pub fn run_session_create_script(
+        &self,
+        path: &Path,
+        session_name: &str,
+        config: &Config,
+    ) -> Result<()> {
+        let command_path = match &config.session_configs {
+            Some(sessions) => match sessions.get(session_name) {
+                Some(session) => match &session.create_script {
+                    Some(create_script) => create_script.to_owned(),
+                    None => path.join(".tms-create"),
+                },
+                None => path.join(".tms-create"),
+            },
+            None => path.join(".tms-create"),
+        };
+
+        self.run_session_script(&command_path, session_name)
+    }
+
+    fn run_session_script(&self, command_path: &Path, session_name: &str) -> Result<()> {
+        if command_path.exists() {
+            self.send_keys(
+                &command_path.to_string()?,
+                Some(&format!("{}:{{start}}.{{top}}", &session_name)),
+            );
+        }
+
+        Ok(())
     }
 
     // windows
