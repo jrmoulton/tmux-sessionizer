@@ -1,4 +1,9 @@
-use std::{collections::HashMap, env::current_dir, fs::canonicalize, path::Path};
+use std::{
+    collections::HashMap,
+    env::current_dir,
+    fs::canonicalize,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     configs::{Config, SearchDirectory, SessionSortOrderConfig},
@@ -46,6 +51,8 @@ pub enum CliCommand {
     Refresh(RefreshCommand),
     /// Clone repository into the first search path and create a new session for it
     CloneRepo(CloneRepoCommand),
+    /// Initialize empty repository at the first search path
+    InitRepo(InitRepoCommand),
     /// Bookmark a directory so it is available to select along with the Git repositories
     Bookmark(BookmarkCommand),
 }
@@ -119,6 +126,12 @@ pub struct CloneRepoCommand {
 }
 
 #[derive(Debug, Args)]
+pub struct InitRepoCommand {
+    /// Name of the repository to initialize
+    repository: String,
+}
+
+#[derive(Debug, Args)]
 pub struct BookmarkCommand {
     #[arg(long, short)]
     /// Delete instead of add a bookmark
@@ -185,6 +198,11 @@ impl Cli {
 
             Some(CliCommand::CloneRepo(args)) => {
                 clone_repo_command(args, config, tmux)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            Some(CliCommand::InitRepo(args)) => {
+                init_repo_command(args, config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
@@ -583,17 +601,21 @@ fn refresh_command(args: &RefreshCommand, tmux: &Tmux) -> Result<()> {
     Ok(())
 }
 
-fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
+fn get_first_search_path(config: &Config) -> Result<PathBuf> {
     let search_dirs = config
         .search_dirs
+        .as_ref()
         .ok_or(TmsError::ConfigError)
         .attach_printable("No search path configured")?;
-    let mut path = search_dirs
+    search_dirs
         .first()
         .ok_or(TmsError::ConfigError)
-        .attach_printable("No search path configured")?
-        .path
-        .clone();
+        .attach_printable("No search path configured")
+        .map(|dir| dir.path.clone())
+}
+
+fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
+    let mut path = get_first_search_path(&config)?;
 
     let (_, repo_name) = args
         .repository
@@ -649,6 +671,34 @@ fn git_credentials_callback(
     };
 
     git2::Cred::ssh_key_from_agent(user)
+}
+
+fn init_repo_command(args: &InitRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
+    let mut path = get_first_search_path(&config)?;
+
+    path.push(&args.repository);
+
+    let repo = Repository::init(&path).change_context(TmsError::GitError)?;
+
+    let mut session_name = args.repository.to_string();
+
+    if tmux.session_exists(&session_name) {
+        session_name = format!(
+            "{}/{}",
+            path.parent()
+                .unwrap()
+                .file_name()
+                .expect("The file name doesn't end in `..`")
+                .to_string()?,
+            session_name
+        );
+    }
+
+    tmux.new_session(Some(&session_name), Some(&path.display().to_string()));
+    tmux.set_up_tmux_env(&repo, &session_name)?;
+    tmux.switch_to_session(&session_name);
+
+    Ok(())
 }
 
 fn bookmark_command(args: &BookmarkCommand, mut config: Config) -> Result<()> {

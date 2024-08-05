@@ -51,7 +51,10 @@
             openssl
             pkg-config
           ]
-          ++ lib.optionals stdenv.isDarwin [ libgit2 ];
+          ++ lib.optionals stdenv.isDarwin [
+            libgit2
+            darwin.Security
+           ];
         };
       };
       flake = {
