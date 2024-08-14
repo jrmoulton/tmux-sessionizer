@@ -211,7 +211,12 @@ impl Tmux {
     }
 
     pub fn switch_client(&self, session_name: &str) -> process::Output {
-        self.execute_tmux_command(&["switch-client", "-t", session_name])
+        let output = self.execute_tmux_command(&["switch-client", "-t", session_name]);
+        if !output.status.success() {
+            self.execute_tmux_command(&["attach-session", "-t", session_name])
+        } else {
+            output
+        }
     }
 
     pub fn display_message(&self, format: &str) -> String {
