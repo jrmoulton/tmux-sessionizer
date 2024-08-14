@@ -49,9 +49,9 @@ pub enum CliCommand {
     Rename(RenameCommand),
     /// Creates new worktree windows for the selected session
     Refresh(RefreshCommand),
-    /// Clone repository into the first search path and create a new session for it
+    /// Clone repository and create a new session for it
     CloneRepo(CloneRepoCommand),
-    /// Initialize empty repository at the first search path
+    /// Initialize empty repository
     InitRepo(InitRepoCommand),
     /// Bookmark a directory so it is available to select along with the Git repositories
     Bookmark(BookmarkCommand),
@@ -601,21 +601,33 @@ fn refresh_command(args: &RefreshCommand, tmux: &Tmux) -> Result<()> {
     Ok(())
 }
 
-fn get_first_search_path(config: &Config) -> Result<PathBuf> {
+fn pick_search_path(config: &Config, tmux: &Tmux) -> Result<Option<PathBuf>> {
     let search_dirs = config
         .search_dirs
         .as_ref()
         .ok_or(TmsError::ConfigError)
-        .attach_printable("No search path configured")?;
-    search_dirs
-        .first()
-        .ok_or(TmsError::ConfigError)
-        .attach_printable("No search path configured")
-        .map(|dir| dir.path.clone())
+        .attach_printable("No search path configured")?
+        .iter()
+        .map(|dir| dir.path.to_string())
+        .filter_map(|path| path.ok())
+        .collect::<Vec<String>>();
+
+    let path = if search_dirs.len() > 1 {
+        get_single_selection(&search_dirs, Preview::Directory, config, tmux)?
+    } else {
+        let first = search_dirs
+            .first()
+            .ok_or(TmsError::ConfigError)
+            .attach_printable("No search path configured")?;
+        Some(first.clone())
+    };
+    Ok(path.map(PathBuf::from))
 }
 
 fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
-    let mut path = get_first_search_path(&config)?;
+    let Some(mut path) = pick_search_path(&config, tmux)? else {
+        return Ok(());
+    };
 
     let (_, repo_name) = args
         .repository
@@ -674,8 +686,9 @@ fn git_credentials_callback(
 }
 
 fn init_repo_command(args: &InitRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
-    let mut path = get_first_search_path(&config)?;
-
+    let Some(mut path) = pick_search_path(&config, tmux)? else {
+        return Ok(());
+    };
     path.push(&args.repository);
 
     let repo = Repository::init(&path).change_context(TmsError::GitError)?;

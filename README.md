@@ -80,7 +80,9 @@ Commands:
   sessions    Show running tmux sessions with asterisk on the current session
   rename      Rename the active session and the working directory
   refresh     Creates new worktree windows for the selected session
-  clone-repo  Clone repository into the first search path and create a new session for it
+  clone-repo  Clone repository and create a new session for it
+  init-repo   Initialize empty repository
+  bookmark    Bookmark a directory so it is available to select along with the Git repositories
   help        Print this message or the help of the given subcommand(s)
 
 Options:
