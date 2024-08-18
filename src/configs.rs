@@ -139,20 +139,18 @@ impl Config {
                 .iter()
                 .map(|search_dir| {
                     let expanded_path = shellexpand::full(&search_dir.path.to_string_lossy())
-                        .change_context(ConfigError::IoError)
-                        .unwrap()
+                        .change_context(ConfigError::IoError)?
                         .to_string();
 
                     let path = canonicalize(expanded_path)
-                        .change_context(ConfigError::IoError)
-                        .unwrap();
+                        .change_context(ConfigError::IoError)?;
 
-                    SearchDirectory::new(path, search_dir.depth)
+                    Ok(SearchDirectory::new(path, search_dir.depth))
                 })
-                .collect()
+                .collect::<Result<_>>()
         } else {
-            Vec::new()
-        };
+            Ok(Vec::new())
+        }?;
 
         // merge old search paths with new search directories
         if let Some(search_paths) = self.search_paths.as_ref() {
