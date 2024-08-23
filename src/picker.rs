@@ -1,5 +1,6 @@
 use std::{
     io::{self, Stdout},
+    process,
     rc::Rc,
     sync::Arc,
 };
@@ -36,6 +37,7 @@ use crate::{
 pub enum Preview {
     SessionPane,
     None,
+    Directory,
 }
 
 pub struct Picker<'a> {
@@ -275,6 +277,12 @@ impl<'a> Picker<'a> {
             if let Some(item) = snapshot.get_matched_item(index as u32) {
                 let output = match self.preview {
                     Preview::SessionPane => self.tmux.capture_pane(item.data),
+                    Preview::Directory => process::Command::new("ls")
+                        .args(["-1", item.data])
+                        .output()
+                        .unwrap_or_else(|_| {
+                            panic!("Failed to execute the command for directory: {}", item.data)
+                        }),
                     Preview::None => panic!("preview rendering should not have occured"),
                 };
 
