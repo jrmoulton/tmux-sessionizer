@@ -36,6 +36,7 @@ use crate::{
 
 pub enum Preview {
     SessionPane,
+    WindowPane,
     None,
     Directory,
 }
@@ -277,6 +278,12 @@ impl<'a> Picker<'a> {
             if let Some(item) = snapshot.get_matched_item(index as u32) {
                 let output = match self.preview {
                     Preview::SessionPane => self.tmux.capture_pane(item.data),
+                    Preview::WindowPane => self.tmux.capture_pane(
+                        item.data
+                            .split_once(' ')
+                            .map(|val| val.0)
+                            .unwrap_or_default(),
+                    ),
                     Preview::Directory => process::Command::new("ls")
                         .args(["-1", item.data])
                         .output()
