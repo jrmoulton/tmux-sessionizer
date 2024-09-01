@@ -17,7 +17,7 @@ use nucleo::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{self, Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{
@@ -158,7 +158,7 @@ impl<'a> Picker<'a> {
         let preview_pane;
 
         let preview_split = if !matches!(self.preview, Preview::None) {
-            preview_direction = if f.size().width.div_ceil(2) >= f.size().height {
+            preview_direction = if f.area().width.div_ceil(2) >= f.area().height {
                 picker_pane = 0;
                 preview_pane = 1;
                 Direction::Horizontal
@@ -171,12 +171,12 @@ impl<'a> Picker<'a> {
                 preview_direction,
                 [Constraint::Percentage(50), Constraint::Percentage(50)],
             )
-            .split(f.size())
+            .split(f.area())
         } else {
             picker_pane = 0;
             preview_pane = 1;
             preview_direction = Direction::Horizontal;
-            Rc::new([f.size()])
+            Rc::new([f.area()])
         };
 
         let layout = Layout::new(
@@ -253,7 +253,10 @@ impl<'a> Picker<'a> {
         let input_line = Line::from(vec![prompt, input_text]);
         let input = Paragraph::new(vec![input_line]);
         f.render_widget(input, layout[1]);
-        f.set_cursor(layout[1].x + self.cursor_pos + 2, layout[1].y);
+        f.set_cursor_position(layout::Position {
+            x: layout[1].x + self.cursor_pos + 2,
+            y: layout[1].y,
+        });
 
         if !matches!(self.preview, Preview::None) {
             self.render_preview(
