@@ -303,7 +303,7 @@ fn windows_command(config: &Config, tmux: &Tmux) -> Result<()> {
         .map(|s| s.to_string())
         .collect();
 
-    if let Some(target_window) = get_single_selection(&windows, Preview::SessionPane, config, tmux)?
+    if let Some(target_window) = get_single_selection(&windows, Preview::WindowPane, config, tmux)?
     {
         if let Some((windex, _)) = target_window.split_once(' ') {
             tmux.select_window(windex);
