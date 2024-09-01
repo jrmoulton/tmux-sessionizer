@@ -1,6 +1,7 @@
 use assert_cmd::Command;
 use pretty_assertions::assert_eq;
-use std::fs;
+use ratatui::style::Color;
+use std::{fs, str::FromStr};
 use tempfile::tempdir;
 use tms::configs::{Config, PickerColorConfig, SearchDirectory, SessionSortOrderConfig};
 
@@ -32,11 +33,11 @@ fn tms_config() -> anyhow::Result<()> {
     let depth = 1;
     let default_session = String::from("my_default_session");
     let excluded_dir = String::from("/exclude/this/directory");
-    let picker_highlight_color = String::from("#aaaaaa");
-    let picker_highlight_text_color = String::from("#bbbbbb");
-    let picker_border_color = String::from("#cccccc");
-    let picker_info_color = String::from("#dddddd");
-    let picker_prompt_color = String::from("#eeeeee");
+    let picker_highlight_color = Color::from_str("#aaaaaa")?;
+    let picker_highlight_text_color = Color::from_str("#bbbbbb")?;
+    let picker_border_color = Color::from_str("#cccccc")?;
+    let picker_info_color = Color::from_str("green")?;
+    let picker_prompt_color = Color::from_str("#eeeeee")?;
 
     let expected_config = Config {
         default_session: Some(default_session.clone()),
@@ -53,11 +54,11 @@ fn tms_config() -> anyhow::Result<()> {
         )]),
         sessions: None,
         picker_colors: Some(PickerColorConfig {
-            highlight_color: Some(picker_highlight_color.clone()),
-            highlight_text_color: Some(picker_highlight_text_color.clone()),
-            border_color: Some(picker_border_color.clone()),
-            info_color: Some(picker_info_color.clone()),
-            prompt_color: Some(picker_prompt_color.clone()),
+            highlight_color: Some(picker_highlight_color),
+            highlight_text_color: Some(picker_highlight_text_color),
+            border_color: Some(picker_border_color),
+            info_color: Some(picker_info_color),
+            prompt_color: Some(picker_prompt_color),
         }),
         shortcuts: None,
         bookmarks: None,
@@ -88,15 +89,15 @@ fn tms_config() -> anyhow::Result<()> {
             "--excluded",
             &excluded_dir,
             "--picker-highlight-color",
-            &picker_highlight_color,
+            &picker_highlight_color.to_string(),
             "--picker-highlight-text-color",
-            &picker_highlight_text_color,
+            &picker_highlight_text_color.to_string(),
             "--picker-border-color",
-            &picker_border_color,
+            &picker_border_color.to_string(),
             "--picker-info-color",
-            &picker_info_color,
+            &picker_info_color.to_string(),
             "--picker-prompt-color",
-            &picker_prompt_color,
+            &picker_prompt_color.to_string(),
         ]);
 
     tms.assert().success().code(0);
