@@ -29,7 +29,7 @@ config = { version = "0.14", default-features = false, features = ["toml"] }
 toml = "0.8"
 dirs = "5.0.1"
 nucleo = "0.5.0"
-ratatui = "0.28"
+ratatui = { version = "0.28", features = ["serde"] }
 crossterm = "0.28"
 clap_complete = "4.5"
 

@@ -3,7 +3,7 @@ use error_stack::ResultExt;
 use serde_derive::{Deserialize, Serialize};
 use std::{collections::HashMap, env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
 
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Style, Stylize};
 
 use crate::{error::Suggestion, keymap::Keymap};
 
@@ -142,8 +142,7 @@ impl Config {
                         .change_context(ConfigError::IoError)?
                         .to_string();
 
-                    let path = canonicalize(expanded_path)
-                        .change_context(ConfigError::IoError)?;
+                    let path = canonicalize(expanded_path).change_context(ConfigError::IoError)?;
 
                     Ok(SearchDirectory::new(path, search_dir.depth))
                 })
@@ -255,67 +254,71 @@ pub struct Window {
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Pane {}
 
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PickerColorConfig {
-    pub highlight_color: Option<String>,
-    pub highlight_text_color: Option<String>,
-    pub border_color: Option<String>,
-    pub info_color: Option<String>,
-    pub prompt_color: Option<String>,
+    pub highlight_color: Option<Color>,
+    pub highlight_text_color: Option<Color>,
+    pub border_color: Option<Color>,
+    pub info_color: Option<Color>,
+    pub prompt_color: Option<Color>,
 }
 
-impl PickerColorConfig {
-    pub fn highlight_style(&self) -> Style {
-        let mut style = Style::default().bg(Color::LightBlue).fg(Color::Black);
+const HIGHLIGHT_COLOR_DEFAULT: Color = Color::LightBlue;
+const HIGHLIGHT_TEXT_COLOR_DEFAULT: Color = Color::Black;
+const BORDER_COLOR_DEFAULT: Color = Color::DarkGray;
+const INFO_COLOR_DEFAULT: Color = Color::LightYellow;
+const PROMPT_COLOR_DEFAULT: Color = Color::LightGreen;
 
-        if let Some(color) = &self.highlight_color {
-            if let Some(color) = rgb_to_color(color) {
-                style = style.bg(color);
-            }
+impl PickerColorConfig {
+    pub fn default_colors() -> Self {
+        PickerColorConfig {
+            highlight_color: Some(HIGHLIGHT_COLOR_DEFAULT),
+            highlight_text_color: Some(HIGHLIGHT_TEXT_COLOR_DEFAULT),
+            border_color: Some(BORDER_COLOR_DEFAULT),
+            info_color: Some(INFO_COLOR_DEFAULT),
+            prompt_color: Some(PROMPT_COLOR_DEFAULT),
+        }
+    }
+
+    pub fn highlight_style(&self) -> Style {
+        let mut style = Style::default()
+            .bg(HIGHLIGHT_COLOR_DEFAULT)
+            .fg(HIGHLIGHT_TEXT_COLOR_DEFAULT)
+            .bold();
+
+        if let Some(color) = self.highlight_color {
+            style = style.bg(color);
         }
 
-        if let Some(color) = &self.highlight_text_color {
-            if let Some(color) = rgb_to_color(color) {
-                style = style.fg(color);
-            }
+        if let Some(color) = self.highlight_text_color {
+            style = style.fg(color);
         }
 
         style
     }
 
-    pub fn border_color(&self) -> Option<Color> {
-        if let Some(color) = &self.border_color {
-            rgb_to_color(color)
+    pub fn border_color(&self) -> Color {
+        if let Some(color) = self.border_color {
+            color
         } else {
-            None
+            BORDER_COLOR_DEFAULT
         }
     }
 
-    pub fn info_color(&self) -> Option<Color> {
-        if let Some(color) = &self.info_color {
-            rgb_to_color(color)
+    pub fn info_color(&self) -> Color {
+        if let Some(color) = self.info_color {
+            color
         } else {
-            None
+            INFO_COLOR_DEFAULT
         }
     }
 
-    pub fn prompt_color(&self) -> Option<Color> {
-        if let Some(color) = &self.prompt_color {
-            rgb_to_color(color)
+    pub fn prompt_color(&self) -> Color {
+        if let Some(color) = self.prompt_color {
+            color
         } else {
-            None
+            PROMPT_COLOR_DEFAULT
         }
-    }
-}
-
-fn rgb_to_color(color: &str) -> Option<Color> {
-    if color.len() == 7 && color.starts_with('#') {
-        let red = u8::from_str_radix(&color[1..3], 16).ok()?;
-        let green = u8::from_str_radix(&color[3..5], 16).ok()?;
-        let blue = u8::from_str_radix(&color[5..7], 16).ok()?;
-        Some(Color::Rgb(red, green, blue))
-    } else {
-        None
     }
 }
 

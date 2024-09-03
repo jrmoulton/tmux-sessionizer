@@ -13,7 +13,7 @@ use crossterm::{
 };
 use nucleo::{
     pattern::{CaseMatching, Normalization},
-    Nucleo, Snapshot,
+    Nucleo,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -116,6 +116,8 @@ impl<'a> Picker<'a> {
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     ) -> Result<Option<String>> {
         loop {
+            self.matcher.tick(10);
+            self.update_selection();
             terminal
                 .draw(|f| self.render(f))
                 .map_err(|e| TmsError::TuiError(e.to_string()))?;
@@ -126,7 +128,7 @@ impl<'a> Picker<'a> {
                         Some(PickerAction::Cancel) => return Ok(None),
                         Some(PickerAction::Confirm) => {
                             if let Some(selected) = self.get_selected() {
-                                return Ok(Some(selected));
+                                return Ok(Some(selected.to_owned()));
                             }
                         }
                         Some(PickerAction::Backspace) => self.remove_filter(),
@@ -149,6 +151,20 @@ impl<'a> Picker<'a> {
                     }
                 }
             }
+        }
+    }
+
+    fn update_selection(&mut self) {
+        let snapshot = self.matcher.snapshot();
+        if let Some(selected) = self.selection.selected() {
+            if snapshot.matched_item_count() == 0 {
+                self.selection.select(None);
+            } else if selected > snapshot.matched_item_count() as usize {
+                self.selection
+                    .select(Some(snapshot.matched_item_count() as usize - 1));
+            }
+        } else if snapshot.matched_item_count() > 0 {
+            self.selection.select(Some(0));
         }
     }
 
@@ -188,57 +204,27 @@ impl<'a> Picker<'a> {
         )
         .split(preview_split[picker_pane]);
 
-        self.matcher.tick(10);
         let snapshot = self.matcher.snapshot();
         let matches = snapshot
             .matched_items(..snapshot.matched_item_count())
             .map(|item| ListItem::new(item.data.as_str()));
 
-        if let Some(selected) = self.selection.selected() {
-            if snapshot.matched_item_count() == 0 {
-                self.selection.select(None);
-            } else if selected > snapshot.matched_item_count() as usize {
-                self.selection
-                    .select(Some(snapshot.matched_item_count() as usize - 1));
-            }
-        } else if snapshot.matched_item_count() > 0 {
-            self.selection.select(Some(0));
-        }
-
-        let mut selected_style = Style::default()
-            .bg(Color::LightBlue)
-            .fg(Color::Black)
-            .bold();
-        let mut border_color = Color::DarkGray;
-        let mut info_color = Color::LightYellow;
-        let mut prompt_color = Color::LightGreen;
-
-        if let Some(colors) = &self.colors {
-            selected_style = colors.highlight_style().bold();
-
-            if let Some(color) = colors.border_color() {
-                border_color = color;
-            }
-
-            if let Some(color) = colors.info_color() {
-                info_color = color;
-            }
-
-            if let Some(color) = colors.prompt_color() {
-                prompt_color = color;
-            }
-        }
+        let colors = if let Some(colors) = self.colors {
+            colors.to_owned()
+        } else {
+            PickerColorConfig::default_colors()
+        };
 
         let table = List::new(matches)
-            .highlight_style(selected_style)
+            .highlight_style(colors.highlight_style())
             .direction(ListDirection::BottomToTop)
             .highlight_spacing(HighlightSpacing::Always)
             .highlight_symbol("> ")
             .block(
                 Block::default()
                     .borders(Borders::BOTTOM)
-                    .border_style(Style::default().fg(border_color))
-                    .title_style(Style::default().fg(info_color))
+                    .border_style(Style::default().fg(colors.border_color()))
+                    .title_style(Style::default().fg(colors.info_color()))
                     .title_position(Position::Bottom)
                     .title(format!(
                         "{}/{}",
@@ -248,7 +234,7 @@ impl<'a> Picker<'a> {
             );
         f.render_stateful_widget(table, layout[0], &mut self.selection);
 
-        let prompt = Span::styled("> ", Style::default().fg(prompt_color));
+        let prompt = Span::styled("> ", Style::default().fg(colors.prompt_color()));
         let input_text = Span::raw(&self.filter);
         let input_line = Line::from(vec![prompt, input_text]);
         let input = Paragraph::new(vec![input_line]);
@@ -260,9 +246,8 @@ impl<'a> Picker<'a> {
 
         if !matches!(self.preview, Preview::None) {
             self.render_preview(
-                snapshot,
                 f,
-                &border_color,
+                &colors.border_color(),
                 &preview_direction,
                 preview_split[preview_pane],
             );
@@ -271,36 +256,31 @@ impl<'a> Picker<'a> {
 
     fn render_preview(
         &self,
-        snapshot: &Snapshot<String>,
         f: &mut Frame,
         border_color: &Color,
         direction: &Direction,
         rect: Rect,
     ) {
-        let text = if let Some(index) = self.selection.selected() {
-            if let Some(item) = snapshot.get_matched_item(index as u32) {
-                let output = match self.preview {
-                    Preview::SessionPane => self.tmux.capture_pane(item.data),
-                    Preview::WindowPane => self.tmux.capture_pane(
-                        item.data
-                            .split_once(' ')
-                            .map(|val| val.0)
-                            .unwrap_or_default(),
-                    ),
-                    Preview::Directory => process::Command::new("ls")
-                        .args(["-1", item.data])
-                        .output()
-                        .unwrap_or_else(|_| {
-                            panic!("Failed to execute the command for directory: {}", item.data)
-                        }),
-                    Preview::None => panic!("preview rendering should not have occured"),
-                };
+        let text = if let Some(item_data) = self.get_selected() {
+            let output = match self.preview {
+                Preview::SessionPane => self.tmux.capture_pane(item_data),
+                Preview::WindowPane => self.tmux.capture_pane(
+                    item_data
+                        .split_once(' ')
+                        .map(|val| val.0)
+                        .unwrap_or_default(),
+                ),
+                Preview::Directory => process::Command::new("ls")
+                    .args(["-1", item_data])
+                    .output()
+                    .unwrap_or_else(|_| {
+                        panic!("Failed to execute the command for directory: {}", item_data)
+                    }),
+                Preview::None => panic!("preview rendering should not have occured"),
+            };
 
-                if output.status.success() {
-                    String::from_utf8(output.stdout).unwrap()
-                } else {
-                    "".to_string()
-                }
+            if output.status.success() {
+                String::from_utf8(output.stdout).unwrap()
             } else {
                 "".to_string()
             }
@@ -323,13 +303,13 @@ impl<'a> Picker<'a> {
         f.render_widget(preview, rect);
     }
 
-    fn get_selected(&self) -> Option<String> {
+    fn get_selected(&self) -> Option<&String> {
         if let Some(index) = self.selection.selected() {
             return self
                 .matcher
                 .snapshot()
                 .get_matched_item(index as u32)
-                .map(|item| item.data.to_owned());
+                .map(|item| item.data);
         }
 
         None

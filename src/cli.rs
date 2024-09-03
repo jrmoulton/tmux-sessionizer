@@ -18,6 +18,7 @@ use clap::{Args, Command, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Generator, Shell};
 use error_stack::ResultExt;
 use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
+use ratatui::style::Color;
 
 #[derive(Debug, Parser)]
 #[command(author, version)]
@@ -89,19 +90,19 @@ pub struct ConfigCommand {
     max_depths: Option<Vec<usize>>,
     #[arg(long, value_name = "#rrggbb")]
     /// Background color of the highlighted item in the picker
-    picker_highlight_color: Option<String>,
+    picker_highlight_color: Option<Color>,
     #[arg(long, value_name = "#rrggbb")]
     /// Text color of the hightlighted item in the picker
-    picker_highlight_text_color: Option<String>,
+    picker_highlight_text_color: Option<Color>,
     #[arg(long, value_name = "#rrggbb")]
     /// Color of the borders between widgets in the picker
-    picker_border_color: Option<String>,
+    picker_border_color: Option<Color>,
     #[arg(long, value_name = "#rrggbb")]
     /// Color of the item count in the picker
-    picker_info_color: Option<String>,
+    picker_info_color: Option<Color>,
     #[arg(long, value_name = "#rrggbb")]
     /// Color of the prompt in the picker
-    picker_prompt_color: Option<String>,
+    picker_prompt_color: Option<Color>,
     #[arg(long, value_name = "Alphabetical | LastAttached")]
     /// Set the sort order of the sessions in the switch command
     session_sort_order: Option<SessionSortOrderConfig>,
@@ -392,27 +393,27 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<()> {
 
     if let Some(color) = &args.picker_highlight_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
-        picker_colors.highlight_color = Some(color.to_string());
+        picker_colors.highlight_color = Some(*color);
         config.picker_colors = Some(picker_colors);
     }
     if let Some(color) = &args.picker_highlight_text_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
-        picker_colors.highlight_text_color = Some(color.to_string());
+        picker_colors.highlight_text_color = Some(*color);
         config.picker_colors = Some(picker_colors);
     }
     if let Some(color) = &args.picker_border_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
-        picker_colors.border_color = Some(color.to_string());
+        picker_colors.border_color = Some(*color);
         config.picker_colors = Some(picker_colors);
     }
     if let Some(color) = &args.picker_info_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
-        picker_colors.info_color = Some(color.to_string());
+        picker_colors.info_color = Some(*color);
         config.picker_colors = Some(picker_colors);
     }
     if let Some(color) = &args.picker_prompt_color {
         let mut picker_colors = config.picker_colors.unwrap_or_default();
-        picker_colors.prompt_color = Some(color.to_string());
+        picker_colors.prompt_color = Some(*color);
         config.picker_colors = Some(picker_colors);
     }
 
