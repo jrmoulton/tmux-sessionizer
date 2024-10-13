@@ -291,10 +291,7 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
 }
 
 fn windows_command(config: &Config, tmux: &Tmux) -> Result<()> {
-    let windows = tmux.list_windows(
-        "'#{?window_attached,,#{window_index} #{window_name}}'",
-        None,
-    );
+    let windows = tmux.list_windows("'#{?window_attached,,#{window_id} #{window_name}}'", None);
 
     let windows: Vec<String> = windows
         .replace('\'', "")
