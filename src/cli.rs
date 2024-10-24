@@ -619,7 +619,13 @@ fn pick_search_path(config: &Config, tmux: &Tmux) -> Result<Option<PathBuf>> {
             .attach_printable("No search path configured")?;
         Some(first.clone())
     };
-    Ok(path.map(PathBuf::from))
+
+    let expanded = path
+        .as_ref()
+        .map(|path| shellexpand::full(path).change_context(TmsError::IoError))
+        .transpose()?
+        .map(|path| PathBuf::from(path.as_ref()));
+    Ok(expanded)
 }
 
 fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
