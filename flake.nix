@@ -65,15 +65,6 @@
             cargoDeps = final.rustPlatform.importCargoLock {
               lockFile = self + "/Cargo.lock";
             };
-            OPENSSL_NO_VENDOR = 1;
-
-            nativeBuildInputs = oa.nativeBuildInputs ++ [ final.installShellFiles ];
-            postInstall = ''
-              installShellCompletion --cmd tms \
-                --bash <($out/bin/tms --generate bash) \
-                --fish <($out/bin/tms --generate fish) \
-                --zsh <($out/bin/tms --generate zsh)
-            '';
           });
         };
 
