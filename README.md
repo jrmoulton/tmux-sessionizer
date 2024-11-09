@@ -69,25 +69,27 @@ Use `tms --help`
 ```
 Scan for all git folders in specified directorires, select one and open it as a new tmux session
 
-Usage: tms [COMMAND]
+Usage: tms [OPTIONS] [COMMAND]
 
 Commands:
-  config      Configure the defaults for search paths and excluded directories
-  start       Initialize tmux with the default sessions
-  switch      Display other sessions with a fuzzy finder and a preview window
-  windows     Display the current session's windows with a fuzzy finder and a preview window
-  kill        Kill the current tmux session and jump to another
-  sessions    Show running tmux sessions with asterisk on the current session
-  rename      Rename the active session and the working directory
-  refresh     Creates new worktree windows for the selected session
-  clone-repo  Clone repository and create a new session for it
-  init-repo   Initialize empty repository
-  bookmark    Bookmark a directory so it is available to select along with the Git repositories
-  help        Print this message or the help of the given subcommand(s)
+  config        Configure the defaults for search paths and excluded directories
+  start         Initialize tmux with the default sessions
+  switch        Display other sessions with a fuzzy finder and a preview window
+  windows       Display the current session's windows with a fuzzy finder and a preview window
+  kill          Kill the current tmux session and jump to another
+  sessions      Show running tmux sessions with asterisk on the current session
+  rename        Rename the active session and the working directory
+  refresh       Creates new worktree windows for the selected session
+  clone-repo    Clone repository and create a new session for it
+  init-repo     Initialize empty repository
+  bookmark      Bookmark a directory so it is available to select along with the Git repositories
+  open-session  Open a session
+  help          Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help     Print help
-  -V, --version  Print version
+      --generate <GENERATOR>  [possible values: bash, elvish, fish, powershell, zsh]
+  -h, --help                  Print help
+  -V, --version               Print version
 ```
 
 ### Configuring defaults

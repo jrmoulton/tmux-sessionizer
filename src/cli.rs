@@ -56,6 +56,8 @@ pub enum CliCommand {
     InitRepo(InitRepoCommand),
     /// Bookmark a directory so it is available to select along with the Git repositories
     Bookmark(BookmarkCommand),
+    /// Open a session
+    OpenSession(OpenSessionCommand),
 }
 
 #[derive(Debug, Args)]
@@ -141,6 +143,12 @@ pub struct BookmarkCommand {
     path: Option<String>,
 }
 
+#[derive(Debug, Args)]
+pub struct OpenSessionCommand {
+    /// Name of the session to open.
+    session: Box<str>,
+}
+
 impl Cli {
     pub fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven> {
         if let Some(generator) = self.generator {
@@ -209,6 +217,11 @@ impl Cli {
 
             Some(CliCommand::Bookmark(args)) => {
                 bookmark_command(args, config)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            Some(CliCommand::OpenSession(args)) => {
+                open_session_command(args, config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
@@ -737,6 +750,17 @@ fn bookmark_command(args: &BookmarkCommand, mut config: Config) -> Result<()> {
     config.save().change_context(TmsError::ConfigError)?;
 
     Ok(())
+}
+
+fn open_session_command(args: &OpenSessionCommand, config: Config, tmux: &Tmux) -> Result<()> {
+    let sessions = create_sessions(&config)?;
+
+    if let Some(session) = sessions.find_session(&args.session) {
+        session.switch_to(tmux, &config)?;
+        Ok(())
+    } else {
+        Err(TmsError::SessionNotFound(args.session.to_string()).into())
+    }
 }
 
 fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
