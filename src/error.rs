@@ -9,6 +9,7 @@ pub enum TmsError {
     TuiError(String),
     IoError,
     ConfigError,
+    SessionNotFound(String),
 }
 
 impl Display for TmsError {
@@ -19,6 +20,7 @@ impl Display for TmsError {
             Self::NonUtf8Path => write!(f, "Non Utf-8 Path"),
             Self::IoError => write!(f, "IO Error"),
             Self::TuiError(inner) => write!(f, "TUI error: {inner}"),
+            Self::SessionNotFound(inner) => write!(f, "Session {inner} not found"),
         }
     }
 }
