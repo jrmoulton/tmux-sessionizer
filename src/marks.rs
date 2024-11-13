@@ -1,6 +1,7 @@
 use std::{env::current_dir, path::PathBuf};
 
 use clap::{Args, Subcommand};
+use clap_complete::{ArgValueCandidates, CompletionCandidate};
 use error_stack::ResultExt;
 
 use crate::{
@@ -14,6 +15,7 @@ use crate::{
 #[derive(Debug, Args)]
 #[clap(args_conflicts_with_subcommands = true)]
 pub struct MarksCommand {
+    #[arg(add  = ArgValueCandidates::new(get_completion_candidates))]
     /// The index of the mark to open
     index: Option<usize>,
     #[command(subcommand)]
@@ -43,6 +45,7 @@ pub struct MarksSetCommand {
 
 #[derive(Debug, Args)]
 pub struct MarksOpenCommand {
+    #[arg(add  = ArgValueCandidates::new(get_completion_candidates))]
     /// The index of the mark to open
     index: usize,
 }
@@ -50,11 +53,23 @@ pub struct MarksOpenCommand {
 #[derive(Debug, Args)]
 #[group(required = true, multiple = false)]
 pub struct MarksDeleteCommand {
+    #[arg(add  = ArgValueCandidates::new(get_completion_candidates))]
     /// Index of mark to delete
     index: Option<usize>,
     #[arg(long, short)]
     /// Delete all items
     all: bool,
+}
+
+fn get_completion_candidates() -> Vec<CompletionCandidate> {
+    let config = Config::new().unwrap_or_default();
+    let marks = get_marks(&config).unwrap_or_default();
+    marks
+        .iter()
+        .map(|(index, session)| {
+            CompletionCandidate::new(index.to_string()).help(Some(session.name.clone().into()))
+        })
+        .collect::<Vec<_>>()
 }
 
 pub fn marks_command(args: &MarksCommand, config: Config, tmux: &Tmux) -> Result<()> {

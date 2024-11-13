@@ -65,6 +65,12 @@
             cargoDeps = final.rustPlatform.importCargoLock {
               lockFile = self + "/Cargo.lock";
             };
+            postInstall = final.lib.optionalString (final.stdenv.buildPlatform.canExecute final.stdenv.hostPlatform) ''
+              installShellCompletion --cmd tms \
+                --bash <(COMPLETE=bash $out/bin/tms) \
+                --fish <(COMPLETE=fish $out/bin/tms) \
+                --zsh <(COMPLETE=zsh $out/bin/tms)
+            '';
           });
         };
 
