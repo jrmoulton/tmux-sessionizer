@@ -9,6 +9,7 @@ use crate::{
     configs::{Config, SearchDirectory, SessionSortOrderConfig},
     dirty_paths::DirtyUtf8Path,
     execute_command, get_single_selection,
+    marks::{marks_command, MarksCommand},
     picker::Preview,
     session::{create_sessions, SessionContainer},
     tmux::Tmux,
@@ -58,6 +59,8 @@ pub enum CliCommand {
     Bookmark(BookmarkCommand),
     /// Open a session
     OpenSession(OpenSessionCommand),
+    /// Manage list of sessions that can be instantly accessed by their index
+    Marks(MarksCommand),
 }
 
 #[derive(Debug, Args)]
@@ -222,6 +225,11 @@ impl Cli {
 
             Some(CliCommand::OpenSession(args)) => {
                 open_session_command(args, config, tmux)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            Some(CliCommand::Marks(args)) => {
+                marks_command(args, config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 

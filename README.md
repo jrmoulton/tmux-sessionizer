@@ -84,12 +84,14 @@ Commands:
   init-repo     Initialize empty repository
   bookmark      Bookmark a directory so it is available to select along with the Git repositories
   open-session  Open a session
+  marks         Manage list of sessions that can be instantly accessed by their index
   help          Print this message or the help of the given subcommand(s)
 
 Options:
       --generate <GENERATOR>  [possible values: bash, elvish, fish, powershell, zsh]
   -h, --help                  Print help
   -V, --version               Print version
+
 ```
 
 ### Configuring defaults
