@@ -9,13 +9,13 @@ use crate::{
     configs::{Config, SearchDirectory, SessionSortOrderConfig},
     dirty_paths::DirtyUtf8Path,
     execute_command, get_single_selection,
+    marks::{marks_command, MarksCommand},
     picker::Preview,
     session::{create_sessions, SessionContainer},
     tmux::Tmux,
     Result, TmsError,
 };
-use clap::{Args, Command, CommandFactory, Parser, Subcommand};
-use clap_complete::{generate, Generator, Shell};
+use clap::{Args, Parser, Subcommand};
 use error_stack::ResultExt;
 use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
 use ratatui::style::Color;
@@ -24,8 +24,6 @@ use ratatui::style::Color;
 #[command(author, version)]
 ///Scan for all git folders in specified directorires, select one and open it as a new tmux session
 pub struct Cli {
-    #[arg(long = "generate", value_enum)]
-    generator: Option<Shell>,
     #[command(subcommand)]
     command: Option<CliCommand>,
 }
@@ -58,6 +56,8 @@ pub enum CliCommand {
     Bookmark(BookmarkCommand),
     /// Open a session
     OpenSession(OpenSessionCommand),
+    /// Manage list of sessions that can be instantly accessed by their index
+    Marks(MarksCommand),
 }
 
 #[derive(Debug, Args)]
@@ -151,12 +151,6 @@ pub struct OpenSessionCommand {
 
 impl Cli {
     pub fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven> {
-        if let Some(generator) = self.generator {
-            let mut cmd = Cli::command();
-            print_completions(generator, &mut cmd);
-            return Ok(SubCommandGiven::Yes);
-        }
-
         // Get the configuration from the config file
         let config = Config::new().change_context(TmsError::ConfigError)?;
 
@@ -222,6 +216,11 @@ impl Cli {
 
             Some(CliCommand::OpenSession(args)) => {
                 open_session_command(args, config, tmux)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            Some(CliCommand::Marks(args)) => {
+                marks_command(args, config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
@@ -761,19 +760,6 @@ fn open_session_command(args: &OpenSessionCommand, config: Config, tmux: &Tmux) 
     } else {
         Err(TmsError::SessionNotFound(args.session.to_string()).into())
     }
-}
-
-fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
-    let name = if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe) = exe.file_name() {
-            exe.to_string_lossy().to_string()
-        } else {
-            cmd.get_name().to_string()
-        }
-    } else {
-        cmd.get_name().to_string()
-    };
-    generate(gen, cmd, name, &mut std::io::stdout());
 }
 
 pub enum SubCommandGiven {

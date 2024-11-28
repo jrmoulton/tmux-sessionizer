@@ -69,7 +69,7 @@ Use `tms --help`
 ```
 Scan for all git folders in specified directorires, select one and open it as a new tmux session
 
-Usage: tms [OPTIONS] [COMMAND]
+Usage: tms [COMMAND]
 
 Commands:
   config        Configure the defaults for search paths and excluded directories
@@ -84,12 +84,12 @@ Commands:
   init-repo     Initialize empty repository
   bookmark      Bookmark a directory so it is available to select along with the Git repositories
   open-session  Open a session
+  marks         Manage list of sessions that can be instantly accessed by their index
   help          Print this message or the help of the given subcommand(s)
 
 Options:
-      --generate <GENERATOR>  [possible values: bash, elvish, fish, powershell, zsh]
-  -h, --help                  Print help
-  -V, --version               Print version
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
 ### Configuring defaults
@@ -208,4 +208,21 @@ session switch. This can be configured with settings like this.
 ```
 bind -r '(' switch-client -p\; refresh-client -S
 bind -r ')' switch-client -n\; refresh-client -S
+```
+ 
+## Shell completions
+
+### Bash
+```bash
+echo "source <(COMPLETE=bash tms)" >> ~/.bashrc
+```
+
+### Zsh
+```zsh
+echo "source <(COMPLETE=zsh tms)" >> ~/.zshrc
+```
+
+### Fish
+```fish
+echo "COMPLETE=fish tms | source" >> ~/.config/fish/config.fish
 ```

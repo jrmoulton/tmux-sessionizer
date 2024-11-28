@@ -63,6 +63,7 @@ fn tms_config() -> anyhow::Result<()> {
         shortcuts: None,
         bookmarks: None,
         session_configs: None,
+        marks: None,
     };
 
     let mut tms = Command::cargo_bin("tms")?;

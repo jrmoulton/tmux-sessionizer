@@ -1,4 +1,7 @@
-use clap::Parser;
+use std::env;
+
+use clap::{CommandFactory, Parser};
+use clap_complete::CompleteEnv;
 use error_stack::Report;
 
 use tms::{
@@ -17,6 +20,21 @@ fn main() -> Result<()> {
     });
     #[cfg(any(not(debug_assertions), test))]
     Report::install_debug_hook::<std::panic::Location>(|_value, _context| {});
+
+    let bin_name = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.file_name().map(|exe| exe.to_string_lossy().to_string()))
+        .unwrap_or("tms".into());
+    match CompleteEnv::with_factory(Cli::command)
+        .bin(bin_name)
+        .try_complete(env::args_os(), None)
+    {
+        Ok(true) => return Ok(()),
+        Err(e) => {
+            panic!("failed to generate completions: {e}");
+        }
+        Ok(false) => {}
+    };
 
     // Use CLAP to parse the command line arguments
     let cli_args = Cli::parse();

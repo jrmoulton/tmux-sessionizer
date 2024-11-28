@@ -19,6 +19,7 @@ exclude = ["images/*"]
 
 git2 = { version= "0.19", features = [ "vendored-openssl" ] }
 clap = { version = "4.5", features = ["cargo", "derive"] }
+clap_complete = { version = "4.5", features = [ "unstable-dynamic" ] }
 serde_derive = "1.0"
 serde = "1.0"
 error-stack = "0.5"
@@ -31,7 +32,6 @@ dirs = "5.0"
 nucleo = "0.5.0"
 ratatui = { version = "0.29", features = ["serde"] }
 crossterm = "0.28"
-clap_complete = "4.5"
 
 [lib]
 name = "tms"
