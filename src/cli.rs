@@ -16,6 +16,7 @@ use crate::{
     Result, TmsError,
 };
 use clap::{Args, Parser, Subcommand};
+use clap_complete::{ArgValueCandidates, CompletionCandidate};
 use error_stack::ResultExt;
 use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
 use ratatui::style::Color;
@@ -145,6 +146,7 @@ pub struct BookmarkCommand {
 
 #[derive(Debug, Args)]
 pub struct OpenSessionCommand {
+    #[arg(add = ArgValueCandidates::new(open_session_completion_candidates))]
     /// Name of the session to open.
     session: Box<str>,
 }
@@ -760,6 +762,20 @@ fn open_session_command(args: &OpenSessionCommand, config: Config, tmux: &Tmux) 
     } else {
         Err(TmsError::SessionNotFound(args.session.to_string()).into())
     }
+}
+
+fn open_session_completion_candidates() -> Vec<CompletionCandidate> {
+    Config::new()
+        .change_context(TmsError::ConfigError)
+        .and_then(|config| create_sessions(&config))
+        .map(|sessions| {
+            sessions
+                .list()
+                .iter()
+                .map(CompletionCandidate::new)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
 }
 
 pub enum SubCommandGiven {
