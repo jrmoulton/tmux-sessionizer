@@ -115,9 +115,11 @@ impl Tmux {
 
         // If the session already exists switch to it, else create the new session and then switch
         sessions.lines().any(|line| {
+            let mut cleaned_line = line.to_owned();
             // tmux will return the output with extra ' and \n characters
-            line.to_owned().retain(|char| char != '\'' && char != '\n');
-            line == repo_short_name
+            cleaned_line.retain(|char| char != '\'' && char != '\n');
+
+            cleaned_line == repo_short_name
         })
     }
 
