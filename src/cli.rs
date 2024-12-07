@@ -1,11 +1,7 @@
-use std::{
-    collections::HashMap,
-    env::current_dir,
-    fs::canonicalize,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, env::current_dir, fs::canonicalize, path::PathBuf};
 
 use crate::{
+    clone::git_clone,
     configs::{Config, SearchDirectory, SessionSortOrderConfig},
     dirty_paths::DirtyUtf8Path,
     execute_command, get_single_selection,
@@ -18,7 +14,7 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use clap_complete::{ArgValueCandidates, CompletionCandidate};
 use error_stack::ResultExt;
-use git2::{build::RepoBuilder, FetchOptions, RemoteCallbacks, Repository};
+use git2::Repository;
 use ratatui::style::Color;
 
 #[derive(Debug, Parser)]
@@ -654,6 +650,7 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
     let repo_name = repo_name.trim_end_matches(".git");
     path.push(repo_name);
 
+    println!("Cloning into '{repo_name}'...");
     let repo = git_clone(&args.repository, &path)?;
 
     let mut session_name = repo_name.to_string();
@@ -675,32 +672,6 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
     tmux.switch_to_session(&session_name);
 
     Ok(())
-}
-
-fn git_clone(repo: &str, target: &Path) -> Result<Repository> {
-    let mut callbacks = RemoteCallbacks::new();
-    callbacks.credentials(git_credentials_callback);
-    let mut fo = FetchOptions::new();
-    fo.remote_callbacks(callbacks);
-    let mut builder = RepoBuilder::new();
-    builder.fetch_options(fo);
-
-    builder
-        .clone(repo, target)
-        .change_context(TmsError::GitError)
-}
-
-fn git_credentials_callback(
-    user: &str,
-    user_from_url: Option<&str>,
-    _cred: git2::CredentialType,
-) -> std::result::Result<git2::Cred, git2::Error> {
-    let user = match user_from_url {
-        Some(user) => user,
-        None => user,
-    };
-
-    git2::Cred::ssh_key_from_agent(user)
 }
 
 fn init_repo_command(args: &InitRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
