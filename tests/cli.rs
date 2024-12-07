@@ -3,7 +3,9 @@ use pretty_assertions::assert_eq;
 use ratatui::style::Color;
 use std::{fs, str::FromStr};
 use tempfile::tempdir;
-use tms::configs::{Config, PickerColorConfig, SearchDirectory, SessionSortOrderConfig};
+use tms::configs::{
+    CloneRepoSwitchConfig, Config, PickerColorConfig, SearchDirectory, SessionSortOrderConfig,
+};
 
 #[test]
 fn tms_fails_with_missing_config() -> anyhow::Result<()> {
@@ -64,6 +66,7 @@ fn tms_config() -> anyhow::Result<()> {
         bookmarks: None,
         session_configs: None,
         marks: None,
+        clone_repo_switch: Some(CloneRepoSwitchConfig::Always),
     };
 
     let mut tms = Command::cargo_bin("tms")?;
@@ -99,6 +102,8 @@ fn tms_config() -> anyhow::Result<()> {
             &picker_info_color.to_string(),
             "--picker-prompt-color",
             &picker_prompt_color.to_string(),
+            "--clone-repo-switch",
+            "Always",
         ]);
 
     tms.assert().success().code(0);

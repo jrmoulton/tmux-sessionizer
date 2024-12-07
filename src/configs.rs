@@ -49,6 +49,7 @@ pub struct Config {
     pub bookmarks: Option<Vec<String>>,
     pub session_configs: Option<HashMap<String, SessionConfig>>,
     pub marks: Option<HashMap<String, String>>,
+    pub clone_repo_switch: Option<CloneRepoSwitchConfig>,
 }
 
 impl Config {
@@ -363,6 +364,29 @@ impl ValueEnum for SessionSortOrderConfig {
             }
             SessionSortOrderConfig::LastAttached => {
                 Some(clap::builder::PossibleValue::new("LastAttached"))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum CloneRepoSwitchConfig {
+    Always,
+    Never,
+    Foreground,
+}
+
+impl ValueEnum for CloneRepoSwitchConfig {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Always, Self::Never, Self::Foreground]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            CloneRepoSwitchConfig::Always => Some(clap::builder::PossibleValue::new("Always")),
+            CloneRepoSwitchConfig::Never => Some(clap::builder::PossibleValue::new("Never")),
+            CloneRepoSwitchConfig::Foreground => {
+                Some(clap::builder::PossibleValue::new("Foreground"))
             }
         }
     }

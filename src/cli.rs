@@ -2,7 +2,7 @@ use std::{collections::HashMap, env::current_dir, fs::canonicalize, path::PathBu
 
 use crate::{
     clone::git_clone,
-    configs::{Config, SearchDirectory, SessionSortOrderConfig},
+    configs::{CloneRepoSwitchConfig, Config, SearchDirectory, SessionSortOrderConfig},
     dirty_paths::DirtyUtf8Path,
     execute_command, get_single_selection,
     marks::{marks_command, MarksCommand},
@@ -105,6 +105,13 @@ pub struct ConfigCommand {
     #[arg(long, value_name = "Alphabetical | LastAttached")]
     /// Set the sort order of the sessions in the switch command
     session_sort_order: Option<SessionSortOrderConfig>,
+    #[arg(long, value_name = "Always | Never | Foreground", verbatim_doc_comment)]
+    /// Whether to automatically switch to the new session after the `clone-repo` command finishes
+    /// `Always` will always switch tmux to the new session
+    /// `Never` will always create the new session in the background
+    /// When set to `Foreground`, the new session will only be opened in the background if the active
+    /// tmux session has changed since starting the clone process (for long clone processes on larger repos)
+    clone_repo_switch: Option<CloneRepoSwitchConfig>,
 }
 
 #[derive(Debug, Args)]
@@ -428,6 +435,10 @@ fn config_command(args: &ConfigCommand, mut config: Config) -> Result<()> {
         config.session_sort_order = Some(order.to_owned());
     }
 
+    if let Some(switch) = &args.clone_repo_switch {
+        config.clone_repo_switch = Some(switch.to_owned());
+    }
+
     config.save().change_context(TmsError::ConfigError)?;
     println!("Configuration has been stored");
     Ok(())
@@ -650,10 +661,25 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
     let repo_name = repo_name.trim_end_matches(".git");
     path.push(repo_name);
 
+    let previous_session = tmux.current_session("#{session_name}");
+
     println!("Cloning into '{repo_name}'...");
     let repo = git_clone(&args.repository, &path)?;
 
     let mut session_name = repo_name.to_string();
+
+    let switch_config = config
+        .clone_repo_switch
+        .unwrap_or(CloneRepoSwitchConfig::Always);
+
+    let switch = match switch_config {
+        CloneRepoSwitchConfig::Always => true,
+        CloneRepoSwitchConfig::Never => false,
+        CloneRepoSwitchConfig::Foreground => {
+            let active_session = tmux.current_session("#{session_name}");
+            previous_session == active_session
+        }
+    };
 
     if tmux.session_exists(&session_name) {
         session_name = format!(
@@ -669,7 +695,9 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
 
     tmux.new_session(Some(&session_name), Some(&path.display().to_string()));
     tmux.set_up_tmux_env(&repo, &session_name)?;
-    tmux.switch_to_session(&session_name);
+    if switch {
+        tmux.switch_to_session(&session_name);
+    }
 
     Ok(())
 }

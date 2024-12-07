@@ -76,6 +76,17 @@ impl Tmux {
         Tmux::stdout_to_string(output)
     }
 
+    pub fn current_session(&self, format: &str) -> String {
+        let output = self.execute_tmux_command(&[
+            "list-sessions",
+            "-F",
+            format,
+            "-f",
+            "#{session_attached}",
+        ]);
+        Tmux::stdout_to_string(output)
+    }
+
     pub fn kill_session(&self, session: &str) -> process::Output {
         self.execute_tmux_command(&["kill-session", "-t", session])
     }
