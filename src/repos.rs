@@ -36,7 +36,7 @@ pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
             }
         }
 
-        if let Ok(repo) = git2::Repository::open(file.path.clone()) {
+        if let Ok(repo) = git2::Repository::open(&file.path) {
             if repo.is_worktree() {
                 continue;
             }
