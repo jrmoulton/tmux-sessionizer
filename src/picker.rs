@@ -29,7 +29,7 @@ use ratatui::{
 
 use crate::{
     configs::PickerColorConfig,
-    keymap::{default_keymap, Keymap, PickerAction},
+    keymap::{Keymap, PickerAction},
     tmux::Tmux,
     Result, TmsError,
 };
@@ -64,13 +64,11 @@ impl<'a> Picker<'a> {
             injector.push(str.to_owned(), |_, dst| dst[0] = str.to_owned().into());
         }
 
-        let mut default_keymap = default_keymap();
-
-        if let Some(keymap) = keymap {
-            keymap.iter().for_each(|(event, action)| {
-                default_keymap.insert(*event, *action);
-            })
-        }
+        let keymap = if let Some(keymap) = keymap {
+            Keymap::with_defaults(keymap)
+        } else {
+            Keymap::default()
+        };
 
         Picker {
             matcher,
@@ -79,7 +77,7 @@ impl<'a> Picker<'a> {
             selection: ListState::default(),
             filter: String::default(),
             cursor_pos: 0,
-            keymap: default_keymap,
+            keymap,
             tmux,
         }
     }
@@ -124,7 +122,7 @@ impl<'a> Picker<'a> {
 
             if let Event::Key(key) = event::read().map_err(|e| TmsError::TuiError(e.to_string()))? {
                 if key.kind == KeyEventKind::Press {
-                    match self.keymap.get(&key.into()) {
+                    match self.keymap.0.get(&key.into()) {
                         Some(PickerAction::Cancel) => return Ok(None),
                         Some(PickerAction::Confirm) => {
                             if let Some(selected) = self.get_selected() {
