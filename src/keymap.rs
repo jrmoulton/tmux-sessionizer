@@ -1,16 +1,49 @@
+use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::{collections::HashMap, fmt::Debug};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::de::Error as DeError;
-use serde::ser::Error as SerError;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::error::TmsError;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Key {
     code: KeyCode,
     modifiers: KeyModifiers,
+}
+
+impl PartialOrd for Key {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Key {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let a = self.to_string();
+        let b = other.to_string();
+        a.cmp(&b)
+    }
+}
+
+impl Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let modifiers = self
+            .modifiers
+            .iter()
+            .filter_map(modifier_to_string)
+            .collect::<Vec<&str>>()
+            .join("-");
+        let code = keycode_to_string(self.code).unwrap();
+        let formatted = if modifiers.is_empty() {
+            code
+        } else {
+            format!("{}-{}", modifiers, code)
+        };
+        write!(f, "{formatted}")
+    }
 }
 
 impl Serialize for Key {
@@ -18,21 +51,7 @@ impl Serialize for Key {
     where
         S: serde::Serializer,
     {
-        let modifiers = self
-            .modifiers
-            .iter()
-            .filter_map(modifier_to_string)
-            .collect::<Vec<&str>>()
-            .join("-");
-        let code = keycode_to_string(self.code)
-            .ok_or(TmsError::ConfigError)
-            .map_err(S::Error::custom)?;
-        let formatted = if modifiers.is_empty() {
-            code
-        } else {
-            format!("{}-{}", modifiers, code)
-        };
-        serializer.serialize_str(&formatted)
+        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -159,137 +178,159 @@ impl From<KeyEvent> for Key {
     }
 }
 
-pub type Keymap = HashMap<Key, PickerAction>;
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Keymap(#[serde(serialize_with = "sorted_map")] pub HashMap<Key, PickerAction>);
 
-pub fn default_keymap() -> Keymap {
-    HashMap::from([
-        (
-            Key {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::Cancel,
-        ),
-        (
-            Key {
-                code: KeyCode::Esc,
-                modifiers: KeyModifiers::empty(),
-            },
-            PickerAction::Cancel,
-        ),
-        (
-            Key {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::empty(),
-            },
-            PickerAction::Confirm,
-        ),
-        (
-            Key {
-                code: KeyCode::Delete,
-                modifiers: KeyModifiers::empty(),
-            },
-            PickerAction::Delete,
-        ),
-        (
-            Key {
-                code: KeyCode::Char('d'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::Delete,
-        ),
-        (
-            Key {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::empty(),
-            },
-            PickerAction::Backspace,
-        ),
-        (
-            Key {
-                code: KeyCode::Down,
-                modifiers: KeyModifiers::empty(),
-            },
-            PickerAction::MoveDown,
-        ),
-        (
-            Key {
-                code: KeyCode::Char('j'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::MoveDown,
-        ),
-        (
-            Key {
-                code: KeyCode::Char('n'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::MoveDown,
-        ),
-        (
-            Key {
-                code: KeyCode::Up,
-                modifiers: KeyModifiers::empty(),
-            },
-            PickerAction::MoveUp,
-        ),
-        (
-            Key {
-                code: KeyCode::Char('k'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::MoveUp,
-        ),
-        (
-            Key {
-                code: KeyCode::Char('p'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::MoveUp,
-        ),
-        (
-            Key {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::empty(),
-            },
-            PickerAction::CursorLeft,
-        ),
-        (
-            Key {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::empty(),
-            },
-            PickerAction::CursorRight,
-        ),
-        (
-            Key {
-                code: KeyCode::Char('w'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::DeleteWord,
-        ),
-        (
-            Key {
-                code: KeyCode::Char('u'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::DeleteToLineStart,
-        ),
-        (
-            Key {
-                code: KeyCode::Char('a'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::MoveToLineStart,
-        ),
-        (
-            Key {
-                code: KeyCode::Char('e'),
-                modifiers: KeyModifiers::CONTROL,
-            },
-            PickerAction::MoveToLineEnd,
-        ),
-    ])
+fn sorted_map<S: Serializer, K: Serialize + Ord + Debug, V: Serialize + Debug>(
+    value: &HashMap<K, V>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut items: Vec<(_, _)> = value.iter().collect();
+    items.sort_by(|a, b| a.0.cmp(b.0));
+    BTreeMap::from_iter(items).serialize(serializer)
+}
+
+impl Default for Keymap {
+    fn default() -> Self {
+        Keymap(HashMap::from([
+            (
+                Key {
+                    code: KeyCode::Char('c'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::Cancel,
+            ),
+            (
+                Key {
+                    code: KeyCode::Esc,
+                    modifiers: KeyModifiers::empty(),
+                },
+                PickerAction::Cancel,
+            ),
+            (
+                Key {
+                    code: KeyCode::Enter,
+                    modifiers: KeyModifiers::empty(),
+                },
+                PickerAction::Confirm,
+            ),
+            (
+                Key {
+                    code: KeyCode::Delete,
+                    modifiers: KeyModifiers::empty(),
+                },
+                PickerAction::Delete,
+            ),
+            (
+                Key {
+                    code: KeyCode::Char('d'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::Delete,
+            ),
+            (
+                Key {
+                    code: KeyCode::Backspace,
+                    modifiers: KeyModifiers::empty(),
+                },
+                PickerAction::Backspace,
+            ),
+            (
+                Key {
+                    code: KeyCode::Down,
+                    modifiers: KeyModifiers::empty(),
+                },
+                PickerAction::MoveDown,
+            ),
+            (
+                Key {
+                    code: KeyCode::Char('j'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::MoveDown,
+            ),
+            (
+                Key {
+                    code: KeyCode::Char('n'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::MoveDown,
+            ),
+            (
+                Key {
+                    code: KeyCode::Up,
+                    modifiers: KeyModifiers::empty(),
+                },
+                PickerAction::MoveUp,
+            ),
+            (
+                Key {
+                    code: KeyCode::Char('k'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::MoveUp,
+            ),
+            (
+                Key {
+                    code: KeyCode::Char('p'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::MoveUp,
+            ),
+            (
+                Key {
+                    code: KeyCode::Left,
+                    modifiers: KeyModifiers::empty(),
+                },
+                PickerAction::CursorLeft,
+            ),
+            (
+                Key {
+                    code: KeyCode::Right,
+                    modifiers: KeyModifiers::empty(),
+                },
+                PickerAction::CursorRight,
+            ),
+            (
+                Key {
+                    code: KeyCode::Char('w'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::DeleteWord,
+            ),
+            (
+                Key {
+                    code: KeyCode::Char('u'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::DeleteToLineStart,
+            ),
+            (
+                Key {
+                    code: KeyCode::Char('a'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::MoveToLineStart,
+            ),
+            (
+                Key {
+                    code: KeyCode::Char('e'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::MoveToLineEnd,
+            ),
+        ]))
+    }
+}
+
+impl Keymap {
+    pub fn with_defaults(keymap: &Keymap) -> Self {
+        let mut default = Self::default();
+        keymap.0.iter().for_each(|(event, action)| {
+            default.0.insert(*event, *action);
+        });
+        default
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]

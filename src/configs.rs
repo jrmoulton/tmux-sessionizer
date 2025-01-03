@@ -52,6 +52,53 @@ pub struct Config {
     pub clone_repo_switch: Option<CloneRepoSwitchConfig>,
 }
 
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConfigExport {
+    pub default_session: Option<String>,
+    pub display_full_path: bool,
+    pub search_submodules: bool,
+    pub recursive_submodules: bool,
+    pub switch_filter_unknown: bool,
+    pub session_sort_order: SessionSortOrderConfig,
+    pub excluded_dirs: Vec<String>,
+    pub search_dirs: Vec<SearchDirectory>,
+    pub sessions: Vec<Session>,
+    pub picker_colors: PickerColorConfig,
+    pub shortcuts: Keymap,
+    pub bookmarks: Vec<String>,
+    pub session_configs: HashMap<String, SessionConfig>,
+    pub marks: HashMap<String, String>,
+    pub clone_repo_switch: CloneRepoSwitchConfig,
+}
+
+impl From<Config> for ConfigExport {
+    fn from(value: Config) -> Self {
+        Self {
+            default_session: value.default_session,
+            display_full_path: value.display_full_path.unwrap_or_default(),
+            search_submodules: value.search_submodules.unwrap_or_default(),
+            recursive_submodules: value.recursive_submodules.unwrap_or_default(),
+            switch_filter_unknown: value.switch_filter_unknown.unwrap_or_default(),
+            session_sort_order: value.session_sort_order.unwrap_or_default(),
+            excluded_dirs: value.excluded_dirs.unwrap_or_default(),
+            search_dirs: value.search_dirs.unwrap_or_default(),
+            sessions: value.sessions.unwrap_or_default(),
+            picker_colors: PickerColorConfig::with_defaults(
+                value.picker_colors.unwrap_or_default(),
+            ),
+            shortcuts: value
+                .shortcuts
+                .as_ref()
+                .map(Keymap::with_defaults)
+                .unwrap_or_default(),
+            bookmarks: value.bookmarks.unwrap_or_default(),
+            session_configs: value.session_configs.unwrap_or_default(),
+            marks: value.marks.unwrap_or_default(),
+            clone_repo_switch: value.clone_repo_switch.unwrap_or_default(),
+        }
+    }
+}
+
 impl Config {
     pub(crate) fn new() -> Result<Self> {
         let config_builder = match env::var("TMS_CONFIG_FILE") {
@@ -304,6 +351,18 @@ impl PickerColorConfig {
         }
     }
 
+    pub fn with_defaults(self) -> Self {
+        PickerColorConfig {
+            highlight_color: self.highlight_color.or(Some(HIGHLIGHT_COLOR_DEFAULT)),
+            highlight_text_color: self
+                .highlight_text_color
+                .or(Some(HIGHLIGHT_TEXT_COLOR_DEFAULT)),
+            border_color: self.border_color.or(Some(BORDER_COLOR_DEFAULT)),
+            info_color: self.info_color.or(Some(INFO_COLOR_DEFAULT)),
+            prompt_color: self.prompt_color.or(Some(PROMPT_COLOR_DEFAULT)),
+        }
+    }
+
     pub fn highlight_style(&self) -> Style {
         let mut style = Style::default()
             .bg(HIGHLIGHT_COLOR_DEFAULT)
@@ -346,8 +405,9 @@ impl PickerColorConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub enum SessionSortOrderConfig {
+    #[default]
     Alphabetical,
     LastAttached,
 }
@@ -369,8 +429,9 @@ impl ValueEnum for SessionSortOrderConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum CloneRepoSwitchConfig {
+    #[default]
     Always,
     Never,
     Foreground,

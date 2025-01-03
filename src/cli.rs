@@ -2,7 +2,9 @@ use std::{collections::HashMap, env::current_dir, fs::canonicalize, path::PathBu
 
 use crate::{
     clone::git_clone,
-    configs::{CloneRepoSwitchConfig, Config, SearchDirectory, SessionSortOrderConfig},
+    configs::{
+        CloneRepoSwitchConfig, Config, ConfigExport, SearchDirectory, SessionSortOrderConfig,
+    },
     dirty_paths::DirtyUtf8Path,
     execute_command, get_single_selection,
     marks::{marks_command, MarksCommand},
@@ -58,7 +60,29 @@ pub enum CliCommand {
 }
 
 #[derive(Debug, Args)]
+#[clap(args_conflicts_with_subcommands = true)]
 pub struct ConfigCommand {
+    #[command(flatten)]
+    args: ConfigArgs,
+    #[command(subcommand)]
+    subcommand: Option<ConfigSubCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConfigSubCommand {
+    /// List current config including all default values
+    List(ConfigSubCommandArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ConfigSubCommandArgs {
+    #[arg(short, long)]
+    /// List only defaults without user set values
+    defaults: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ConfigArgs {
     #[arg(short = 'p', long = "paths", value_name = "search paths", num_args = 1..)]
     /// The paths to search through. Shell like expansions such as '~' are supported
     search_paths: Option<Vec<String>>,
@@ -327,7 +351,23 @@ fn windows_command(config: &Config, tmux: &Tmux) -> Result<()> {
     Ok(())
 }
 
-fn config_command(args: &ConfigCommand, mut config: Config) -> Result<()> {
+fn config_command(cmd: &ConfigCommand, mut config: Config) -> Result<()> {
+    match &cmd.subcommand {
+        None => {}
+        Some(ConfigSubCommand::List(args)) => {
+            let config = if args.defaults {
+                Config::default()
+            } else {
+                config
+            };
+            let config = ConfigExport::from(config);
+            let toml_pretty =
+                toml::to_string_pretty(&config).change_context(TmsError::ConfigError)?;
+            println!("{}", toml_pretty);
+            return Ok(());
+        }
+    };
+    let args = &cmd.args;
     let max_depths = args.max_depths.clone().unwrap_or_default();
     config.search_dirs = match &args.search_paths {
         Some(paths) => Some(
@@ -668,9 +708,7 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
 
     let mut session_name = repo_name.to_string();
 
-    let switch_config = config
-        .clone_repo_switch
-        .unwrap_or(CloneRepoSwitchConfig::Always);
+    let switch_config = config.clone_repo_switch.unwrap_or_default();
 
     let switch = match switch_config {
         CloneRepoSwitchConfig::Always => true,
