@@ -69,6 +69,7 @@ fn tms_config() -> anyhow::Result<()> {
         clone_repo_switch: Some(CloneRepoSwitchConfig::Always),
         vcs_providers: None,
         input_position: None,
+        list_worktrees: None,
     };
 
     let mut tms = Command::cargo_bin("tms")?;
