@@ -1,16 +1,18 @@
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use error_stack::{report, Report, ResultExt};
-use gix::{Repository, Submodule};
+use gix::{bstr::ByteSlice, Repository, Submodule};
 use jj_lib::{
     config::StackedConfig,
     git_backend::GitBackend,
     local_working_copy::{LocalWorkingCopy, LocalWorkingCopyFactory},
+    protos::simple_workspace_store,
     repo::StoreFactories,
     settings::UserSettings,
     workspace::{WorkingCopyFactories, Workspace},
     workspace_store::{SimpleWorkspaceStore, WorkspaceStore},
 };
 use once_cell::sync::OnceCell;
+use prost::Message as _;
 use std::{
     collections::{HashMap, VecDeque},
     fs::{self},
@@ -54,6 +56,23 @@ impl Worktree for Workspace {
 
     fn path(&self) -> Result<PathBuf> {
         Ok(self.workspace_root().to_path_buf())
+    }
+
+    fn is_prunable(&self) -> bool {
+        false
+    }
+}
+
+impl Worktree for simple_workspace_store::Workspace {
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn path(&self) -> Result<PathBuf> {
+        self.path
+            .to_str()
+            .change_context(TmsError::NonUtf8Path)
+            .map(PathBuf::from)
     }
 
     fn is_prunable(&self) -> bool {
@@ -177,6 +196,28 @@ impl LazyRepoProvider {
                 Ok(repo.is_worktree())
             }
             VcsProviders::Jujutsu => Ok(self.path.join(".jj/repo").is_file()),
+        }
+    }
+
+    pub fn worktrees(&'_ self) -> Result<Vec<Box<dyn Worktree + '_>>> {
+        match self.provider {
+            VcsProviders::Git => self.resolve()?.worktrees(),
+            VcsProviders::Jujutsu => {
+                let repo_path = self.path.join(".jj/repo");
+                let store_file = repo_path.join("workspace_store/index");
+                let workspace_data = fs::read(&store_file).change_context(TmsError::IoError)?;
+
+                let workspaces_proto = jj_lib::protos::simple_workspace_store::Workspaces::decode(
+                    workspace_data.as_slice(),
+                )
+                .change_context(TmsError::IoError)?;
+                let workspaces = workspaces_proto
+                    .workspaces
+                    .into_iter()
+                    .map(|w| Box::new(w) as Box<dyn Worktree>)
+                    .collect::<Vec<_>>();
+                Ok(workspaces)
+            }
         }
     }
 }
@@ -370,6 +411,30 @@ pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
                 Report::new(TmsError::GitError).attach_printable("Not a valid repository name")
             })?
             .to_string()?;
+
+        if let Some(true) = config.list_worktrees {
+            let vcs_provider_config = config
+                .vcs_providers
+                .clone()
+                .unwrap_or_else(|| DEFAULT_VCS_PROVIDERS.to_vec());
+            for worktree in repo.worktrees()?.iter() {
+                let Ok(sub) = worktree
+                    .path()
+                    .and_then(|path| LazyRepoProvider::new(&path, &vcs_provider_config))
+                else {
+                    continue;
+                };
+                let session = Session::new(
+                    format!("{}#{}", session_name, worktree.name()),
+                    SessionType::Git(sub),
+                );
+                if let Some(list) = repos.get_mut(&session.name) {
+                    list.push(session);
+                } else {
+                    repos.insert(session.name.clone(), vec![session]);
+                }
+            }
+        }
 
         let session = Session::new(session_name, SessionType::Git(repo));
         if let Some(list) = repos.get_mut(&session.name) {

@@ -2893,6 +2893,7 @@ dependencies = [
  "once_cell",
  "predicates",
  "pretty_assertions",
+ "prost",
  "ratatui",
  "serde",
  "serde_derive",

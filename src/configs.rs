@@ -54,6 +54,7 @@ pub struct Config {
     pub marks: Option<HashMap<String, String>>,
     pub clone_repo_switch: Option<CloneRepoSwitchConfig>,
     pub vcs_providers: Option<Vec<VcsProviders>>,
+    pub list_worktrees: Option<bool>,
 }
 
 pub const DEFAULT_VCS_PROVIDERS: &[VcsProviders] = &[VcsProviders::Git];
@@ -84,6 +85,7 @@ pub struct ConfigExport {
     pub marks: HashMap<String, String>,
     pub clone_repo_switch: CloneRepoSwitchConfig,
     pub vcs_providers: Vec<VcsProviders>,
+    pub list_worktrees: bool,
 }
 
 impl From<Config> for ConfigExport {
@@ -111,6 +113,7 @@ impl From<Config> for ConfigExport {
             marks: value.marks.unwrap_or_default(),
             clone_repo_switch: value.clone_repo_switch.unwrap_or_default(),
             vcs_providers: value.vcs_providers.unwrap_or(DEFAULT_VCS_PROVIDERS.into()),
+            list_worktrees: value.list_worktrees.unwrap_or_default(),
         }
     }
 }

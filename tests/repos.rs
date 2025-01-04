@@ -47,6 +47,39 @@ fn find_repos_includes_gitlink_project() {
 }
 
 #[test]
+fn find_repos_includes_worktrees() {
+    let dir = tempdir().unwrap();
+    let search = dir.path().join("search");
+    let project = search.join("my-project");
+    fs::create_dir_all(&project).unwrap();
+    let search = fs::canonicalize(&search).unwrap();
+    Command::new("git")
+        .args(["init", "--bare"])
+        .arg(&project)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["worktree", "add", "main"])
+        .current_dir(&project)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["worktree", "add", "test"])
+        .current_dir(&project)
+        .status()
+        .unwrap();
+    let mut config = config_searching(search, 2);
+    config.list_worktrees = Some(true);
+
+    let repos = find_repos(&config).unwrap();
+
+    assert!(repos.contains_key("my-project"));
+    assert!(repos.contains_key("my-project#main"));
+    assert!(repos.contains_key("my-project#test"));
+    assert_eq!(repos.len(), 3);
+}
+
+#[test]
 fn find_repos_excludes_linked_worktree() {
     let dir = tempdir().unwrap();
     let search = dir.path().join("search");
