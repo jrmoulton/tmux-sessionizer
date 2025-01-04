@@ -21,7 +21,7 @@ use ratatui::style::Color;
 
 #[derive(Debug, Parser)]
 #[command(author, version)]
-///Scan for all git folders in specified directorires, select one and open it as a new tmux session
+///Scan for all git folders in specified directories, select one and open it as a new tmux session
 pub struct Cli {
     #[command(subcommand)]
     command: Option<CliCommand>,
@@ -115,7 +115,7 @@ pub struct ConfigArgs {
     /// Background color of the highlighted item in the picker
     picker_highlight_color: Option<Color>,
     #[arg(long, value_name = "#rrggbb")]
-    /// Text color of the hightlighted item in the picker
+    /// Text color of the highlighted item in the picker
     picker_highlight_text_color: Option<Color>,
     #[arg(long, value_name = "#rrggbb")]
     /// Color of the borders between widgets in the picker
@@ -136,6 +136,9 @@ pub struct ConfigArgs {
     /// When set to `Foreground`, the new session will only be opened in the background if the active
     /// tmux session has changed since starting the clone process (for long clone processes on larger repos)
     clone_repo_switch: Option<CloneRepoSwitchConfig>,
+    #[arg(long, value_name = "true | false")]
+    /// Enable listing of woktrees for bare repositories
+    enable_list_worktrees: Option<bool>,
 }
 
 #[derive(Debug, Args)]
@@ -420,6 +423,10 @@ fn config_command(cmd: &ConfigCommand, mut config: Config) -> Result<()> {
 
     if let Some(switch_filter_unknown) = args.switch_filter_unknown {
         config.switch_filter_unknown = Some(switch_filter_unknown.to_owned());
+    }
+
+    if let Some(enable_list_worktrees) = args.enable_list_worktrees {
+        config.list_worktrees = Some(enable_list_worktrees.to_owned());
     }
 
     if let Some(dirs) = &args.excluded_dirs {
