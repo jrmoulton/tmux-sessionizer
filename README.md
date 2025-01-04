@@ -77,7 +77,7 @@ kill.
 Use `tms --help`
 
 ```
-Scan for all git folders in specified directorires, select one and open it as a new tmux session
+Scan for all git folders in specified directories, select one and open it as a new tmux session
 
 Usage: tms [COMMAND]
 
@@ -108,6 +108,11 @@ Options:
 Configure the defaults for search paths and excluded directories
 
 Usage: tms config [OPTIONS]
+       tms config <COMMAND>
+
+Commands:
+  list  List current config including all default values
+  help  Print this message or the help of the given subcommand(s)
 
 Options:
   -p, --paths <search paths>...
@@ -131,15 +136,23 @@ Options:
       --picker-highlight-color <#rrggbb>
           Background color of the highlighted item in the picker
       --picker-highlight-text-color <#rrggbb>
-          Text color of the hightlighted item in the picker
+          Text color of the highlighted item in the picker
       --picker-border-color <#rrggbb>
           Color of the borders between widgets in the picker
       --picker-info-color <#rrggbb>
           Color of the item count in the picker
       --picker-prompt-color <#rrggbb>
           Color of the prompt in the picker
-      --session-sort-order <Alphabetical | LastAttach>
+      --session-sort-order <Alphabetical | LastAttached>
           Set the sort order of the sessions in the switch command [possible values: Alphabetical, LastAttached]
+      --clone-repo-switch <Always | Never | Foreground>
+          Whether to automatically switch to the new session after the `clone-repo` command finishes
+          `Always` will always switch tmux to the new session
+          `Never` will always create the new session in the background
+          When set to `Foreground`, the new session will only be opened in the background if the active
+          tmux session has changed since starting the clone process (for long clone processes on larger repos) [possible values: Always, Never, Foreground]
+      --enable-list-worktrees <true | false>
+          Enable listing of woktrees for bare repositories [possible values: true, false]
   -h, --help
           Print help
 ```
