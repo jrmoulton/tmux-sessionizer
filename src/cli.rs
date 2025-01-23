@@ -678,6 +678,7 @@ fn pick_search_path(config: &Config, tmux: &Tmux) -> Result<Option<PathBuf>> {
         .ok_or(TmsError::ConfigError)
         .attach_printable("No search path configured")?
         .iter()
+        .filter(|dir| dir.depth > 0)
         .map(|dir| dir.path.to_string())
         .filter_map(|path| path.ok())
         .collect::<Vec<String>>();
