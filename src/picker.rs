@@ -322,7 +322,7 @@ impl<'a> Picker<'a> {
         let max = item_count - 1;
 
         match self.selection.selected() {
-            Some(i) if i >= max => {}
+            Some(i) if i >= max => self.selection.select(Some(0)),
             Some(i) => self.selection.select(Some(i + 1)),
             None => self.selection.select(Some(0)),
         }
@@ -330,7 +330,13 @@ impl<'a> Picker<'a> {
 
     fn move_down(&mut self) {
         match self.selection.selected() {
-            Some(0) => {}
+            Some(0) => {
+                let item_count = self.matcher.snapshot().matched_item_count() as usize;
+                if item_count == 0 {
+                    return;
+                }
+                self.selection.select(Some(item_count - 1))
+            }
             Some(i) => self.selection.select(Some(i - 1)),
             None => self.selection.select(Some(0)),
         }
