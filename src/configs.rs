@@ -52,6 +52,7 @@ pub struct Config {
     pub session_configs: Option<HashMap<String, SessionConfig>>,
     pub marks: Option<HashMap<String, String>>,
     pub clone_repo_switch: Option<CloneRepoSwitchConfig>,
+    pub list_worktrees: Option<bool>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]

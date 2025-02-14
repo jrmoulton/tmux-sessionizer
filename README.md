@@ -130,6 +130,14 @@ Options:
           Color of the prompt in the picker
       --session-sort-order <Alphabetical | LastAttach>
           Set the sort order of the sessions in the switch command [possible values: Alphabetical, LastAttached]
+      --clone-repo-switch <Always | Never | Foreground>
+                Whether to automatically switch to the new session after the `clone-repo` command finishes
+                `Always` will always switch tmux to the new session
+                `Never` will always create the new session in the background
+                When set to `Foreground`, the new session will only be opened in the background if the active
+                tmux session has changed since starting the clone process (for long clone processes on larger repos) [possible values: Always, Never, Foreground]
+      --enable-list-worktrees <true | false>
+          Enable listing of woktrees for bare repositories [possible values: true, false]
   -h, --help
           Print help
 ```
