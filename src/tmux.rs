@@ -294,12 +294,12 @@ impl Tmux {
             // Creates the windows making sure master/main is first
             for window_name in worktrees {
                 let path_to_tree = repo
-                    .find_worktree(&window_name)
+                    .find_worktree(window_name)
                     .change_context(TmsError::GitError)?
                     .path()
                     .to_string()?;
 
-                self.new_window(Some(&window_name), Some(&path_to_tree), Some(repo_name));
+                self.new_window(Some(window_name), Some(&path_to_tree), Some(repo_name));
             }
 
             // Kill that first initial window
