@@ -28,7 +28,6 @@ impl Tmux {
     // Private utility functions
 
     fn execute_tmux_command(&self, args: &[&str]) -> process::Output {
-        println!("Execute Command: {}", args.join(" "));
         process::Command::new("tmux")
             .args(["-L", &self.socket_name])
             .args(args)
