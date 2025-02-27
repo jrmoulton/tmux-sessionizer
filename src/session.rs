@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt,
     path::{Path, PathBuf},
 };
 
@@ -19,10 +20,25 @@ pub struct Session {
     pub name: String,
     pub session_type: SessionType,
 }
+impl fmt::Debug for Session {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let session_type_string = match &self.session_type {
+            SessionType::Git(_) => "Git",
+            SessionType::Bookmark(_) => "Bookmark",
+            SessionType::Standard(_) => "Normal",
+        };
+        write!(
+            f,
+            "Session {{ name: {}, session_type: {} }}",
+            self.name, session_type_string
+        )
+    }
+}
 
 pub enum SessionType {
     Git(Repository),
     Bookmark(PathBuf),
+    Standard(PathBuf),
 }
 
 impl Session {
@@ -35,6 +51,7 @@ impl Session {
             SessionType::Git(repo) if repo.is_bare() => repo.path(),
             SessionType::Git(repo) => repo.path().parent().unwrap(),
             SessionType::Bookmark(path) => path,
+            SessionType::Standard(path) => path,
         }
     }
 
@@ -42,6 +59,7 @@ impl Session {
         match &self.session_type {
             SessionType::Git(repo) => self.switch_to_repo_session(repo, tmux, config),
             SessionType::Bookmark(path) => self.switch_to_bookmark_session(tmux, path, config),
+            SessionType::Standard(path) => self.switch_to_normal_session(tmux, path, config),
         }
     }
 
@@ -85,6 +103,18 @@ impl Session {
 
         Ok(())
     }
+
+    fn switch_to_normal_session(&self, tmux: &Tmux, path: &PathBuf, config: &Config) -> Result<()> {
+        let session_name = self.name.to_string();
+
+        if !tmux.session_exists(&session_name) {
+            tmux.new_session(Some(&session_name), path.to_str());
+            tmux.run_session_create_script(path, &session_name, config)?;
+        }
+
+        tmux.switch_to_session(&session_name);
+        Ok(())
+    }
 }
 
 pub trait SessionContainer {
@@ -119,7 +149,7 @@ pub fn create_sessions(config: &Config) -> Result<impl SessionContainer> {
     Ok(sessions)
 }
 
-fn generate_session_container(
+pub fn generate_session_container(
     mut sessions: HashMap<String, Vec<Session>>,
     config: &Config,
 ) -> Result<impl SessionContainer> {

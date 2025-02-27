@@ -49,12 +49,18 @@ fn main() -> Result<()> {
     let sessions = create_sessions(&config)?;
     let session_strings = sessions.list();
 
-    let selected_str =
-        if let Some(str) = get_single_selection(&session_strings, Preview::None, &config, &tmux)? {
-            str
-        } else {
-            return Ok(());
-        };
+    let existing_sessions = tmux.create_sessions(&config)?;
+    let existing_session_strings = existing_sessions.list();
+
+    let all_session_strings = [session_strings, existing_session_strings].concat();
+
+    let selected_str = if let Some(str) =
+        get_single_selection(&all_session_strings, Preview::None, &config, &tmux)?
+    {
+        str
+    } else {
+        return Ok(());
+    };
 
     if let Some(session) = sessions.find_session(&selected_str) {
         session.switch_to(&tmux, &config)?;

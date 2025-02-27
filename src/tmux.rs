@@ -1,5 +1,13 @@
-use std::{env, os::unix::process::CommandExt, path::Path, process};
+use std::{
+    collections::HashMap,
+    env,
+    hash::Hash,
+    os::unix::process::CommandExt,
+    path::{Path, PathBuf},
+    process,
+};
 
+use clap_complete::generate_to;
 use error_stack::ResultExt;
 use git2::Repository;
 
@@ -7,6 +15,7 @@ use crate::{
     configs::Config,
     dirty_paths::DirtyUtf8Path,
     error::{Result, TmsError},
+    session::{generate_session_container, Session, SessionContainer, SessionType},
 };
 
 #[derive(Clone)]
@@ -109,18 +118,18 @@ impl Tmux {
         self.replace_with_tmux_command(&args)
     }
 
-    pub fn switch_to_session(&self, repo_short_name: &str) {
+    pub fn switch_to_session(&self, session_name: &str) {
         if !is_in_tmux_session() {
-            self.attach_session(Some(repo_short_name), None);
+            self.attach_session(Some(session_name), None);
         } else {
-            let result = self.switch_client(repo_short_name);
+            let result = self.switch_client(session_name);
             if !result.status.success() {
-                self.attach_session(Some(repo_short_name), None);
+                self.attach_session(Some(session_name), None);
             }
         }
     }
 
-    pub fn session_exists(&self, repo_short_name: &str) -> bool {
+    pub fn session_exists(&self, session_name: &str) -> bool {
         // Get the tmux sessions
         let sessions = self.list_sessions("'#S'");
 
@@ -130,7 +139,7 @@ impl Tmux {
             // tmux will return the output with extra ' and \n characters
             cleaned_line.retain(|char| char != '\'' && char != '\n');
 
-            cleaned_line == repo_short_name
+            cleaned_line == session_name
         })
     }
 
@@ -283,6 +292,40 @@ impl Tmux {
             self.kill_window(&format!("{repo_name}:^"));
         }
         Ok(())
+    }
+
+    pub fn create_sessions(&self, config: &Config) -> Result<impl SessionContainer> {
+        /*
+        TODO: return Session container
+        of created sessions for each
+        existing session
+        */
+        let sessions = self.find_existing()?;
+        let sessions = generate_session_container(sessions, config)?;
+
+        Ok(sessions)
+    }
+
+    fn find_existing(&self) -> Result<HashMap<String, Vec<Session>>> {
+        let mut existing: HashMap<String, Vec<Session>> = HashMap::new();
+        let sessions = self
+            .list_sessions("'#{session_name}'")
+            .replace('\'', "")
+            .replace("\n\n", "\n");
+
+        let mut sessions: Vec<&str> = sessions.trim().split('\n').collect();
+        let mut sessions: Vec<Session> = sessions
+            .iter()
+            .map(|&name| Session::new(name.to_string(), SessionType::Standard(PathBuf::new())))
+            .collect();
+        for session in sessions {
+            existing
+                .entry(session.name.to_string())
+                .or_insert(vec![])
+                .push(session);
+        }
+
+        Ok(existing)
     }
 }
 
