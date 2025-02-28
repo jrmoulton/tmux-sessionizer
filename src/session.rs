@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    fmt,
     path::{Path, PathBuf},
 };
 
@@ -19,20 +18,6 @@ use crate::{
 pub struct Session {
     pub name: String,
     pub session_type: SessionType,
-}
-impl fmt::Debug for Session {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let session_type_string = match &self.session_type {
-            SessionType::Git(_) => "Git",
-            SessionType::Bookmark(_) => "Bookmark",
-            SessionType::Standard(_) => "Normal",
-        };
-        write!(
-            f,
-            "Session {{ name: {}, session_type: {} }}",
-            self.name, session_type_string
-        )
-    }
 }
 
 pub enum SessionType {
@@ -245,7 +230,7 @@ fn deduplicate_sessions(duplicate_sessions: &mut Vec<Session>) -> Vec<Session> {
     deduplicated
 }
 
-fn append_bookmarks(
+pub fn append_bookmarks(
     config: &Config,
     mut sessions: HashMap<String, Vec<Session>>,
 ) -> Result<HashMap<String, Vec<Session>>> {
@@ -265,6 +250,24 @@ fn append_bookmarks(
     }
 
     Ok(sessions)
+}
+
+pub fn merge_sessions(
+    sessions: &mut HashMap<String, Vec<Session>>,
+    mut git_sessions: HashMap<String, Vec<Session>>,
+) {
+    // Drain all (key, Vec<Session>) pairs out of git_sessions,
+    // moving them into `sessions`.
+    for (key, mut new_sessions) in git_sessions.drain() {
+        // If `key` already exists in `sessions`, append the new sessions.
+        // Otherwise, create a new entry.
+        sessions
+            .entry(key)
+            .or_insert_with(Vec::new)
+            .append(&mut new_sessions);
+    }
+    // After this, `git_sessions` is empty (consumed),
+    // and `sessions` has all the data.
 }
 
 #[cfg(test)]

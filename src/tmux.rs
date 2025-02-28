@@ -15,7 +15,11 @@ use crate::{
     configs::Config,
     dirty_paths::DirtyUtf8Path,
     error::{Result, TmsError},
-    session::{generate_session_container, Session, SessionContainer, SessionType},
+    repos::find_repos,
+    session::{
+        append_bookmarks, generate_session_container, merge_sessions, Session, SessionContainer,
+        SessionType,
+    },
 };
 
 #[derive(Clone)]
@@ -295,12 +299,11 @@ impl Tmux {
     }
 
     pub fn create_sessions(&self, config: &Config) -> Result<impl SessionContainer> {
-        /*
-        TODO: return Session container
-        of created sessions for each
-        existing session
-        */
-        let sessions = self.find_existing()?;
+        let mut sessions = self.find_existing()?;
+        let mut git_sessions = find_repos(config)?;
+        git_sessions = append_bookmarks(config, git_sessions)?;
+        merge_sessions(&mut sessions, git_sessions);
+
         let sessions = generate_session_container(sessions, config)?;
 
         Ok(sessions)
@@ -313,8 +316,8 @@ impl Tmux {
             .replace('\'', "")
             .replace("\n\n", "\n");
 
-        let mut sessions: Vec<&str> = sessions.trim().split('\n').collect();
-        let mut sessions: Vec<Session> = sessions
+        let sessions: Vec<&str> = sessions.trim().split('\n').collect();
+        let sessions: Vec<Session> = sessions
             .iter()
             .map(|&name| Session::new(name.to_string(), SessionType::Standard(PathBuf::new())))
             .collect();
