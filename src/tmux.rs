@@ -1,13 +1,11 @@
 use std::{
     collections::HashMap,
     env,
-    hash::Hash,
     os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process,
 };
 
-use clap_complete::generate_to;
 use error_stack::ResultExt;
 use git2::Repository;
 
@@ -15,10 +13,8 @@ use crate::{
     configs::Config,
     dirty_paths::DirtyUtf8Path,
     error::{Result, TmsError},
-    repos::find_repos,
     session::{
-        append_bookmarks, generate_session_container, merge_sessions, Session, SessionContainer,
-        SessionType,
+        Session, SessionType,
     },
 };
 
@@ -298,18 +294,7 @@ impl Tmux {
         Ok(())
     }
 
-    pub fn create_sessions(&self, config: &Config) -> Result<impl SessionContainer> {
-        let mut sessions = self.find_existing()?;
-        let mut git_sessions = find_repos(config)?;
-        git_sessions = append_bookmarks(config, git_sessions)?;
-        merge_sessions(&mut sessions, git_sessions);
-
-        let sessions = generate_session_container(sessions, config)?;
-
-        Ok(sessions)
-    }
-
-    fn find_existing(&self) -> Result<HashMap<String, Vec<Session>>> {
+    pub fn find_tmux_sessions(&self) -> Result<HashMap<String, Vec<Session>>> {
         let mut existing: HashMap<String, Vec<Session>> = HashMap::new();
         let sessions = self
             .list_sessions("'#{session_name}'")

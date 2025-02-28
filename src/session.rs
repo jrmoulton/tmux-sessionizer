@@ -1,10 +1,12 @@
 use std::{
     collections::HashMap,
+    fmt::Debug,
     path::{Path, PathBuf},
 };
 
 use error_stack::ResultExt;
 use git2::Repository;
+use std::fmt;
 
 use crate::{
     configs::Config,
@@ -15,6 +17,7 @@ use crate::{
     Result,
 };
 
+#[derive(Debug)]
 pub struct Session {
     pub name: String,
     pub session_type: SessionType,
@@ -24,6 +27,23 @@ pub enum SessionType {
     Git(Repository),
     Bookmark(PathBuf),
     Standard(PathBuf),
+}
+
+impl Debug for SessionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let path: &Path = match self {
+            SessionType::Git(repo) if repo.is_bare() => repo.path(),
+            SessionType::Git(repo) => repo.path().parent().unwrap(),
+            SessionType::Bookmark(p) => p,
+            SessionType::Standard(p) => p,
+        };
+
+        match self {
+            SessionType::Git(_) => write!(f, "Git({:?})", path),
+            SessionType::Bookmark(_) => write!(f, "Bookmark({:?})", path),
+            SessionType::Standard(_) => write!(f, "Standard({:?})", path),
+        }
+    }
 }
 
 impl Session {
@@ -125,13 +145,22 @@ impl SessionContainer for HashMap<String, Session> {
     }
 }
 
-pub fn create_sessions(config: &Config) -> Result<impl SessionContainer> {
+pub fn create_repo_sessions(config: &Config) -> Result<impl SessionContainer> {
     let mut sessions = find_repos(config)?;
     sessions = append_bookmarks(config, sessions)?;
 
     let sessions = generate_session_container(sessions, config)?;
 
     Ok(sessions)
+}
+
+pub fn create_all_sessions(config: &Config, tmux: &Tmux) -> Result<impl SessionContainer> {
+    let repo_sessions = find_repos(config)?;
+    let tmux_sessions = tmux.find_tmux_sessions()?;
+
+    let all_sessions = merge_sessions(repo_sessions, tmux_sessions);
+
+    generate_session_container(all_sessions, config)
 }
 
 pub fn generate_session_container(
@@ -252,22 +281,23 @@ pub fn append_bookmarks(
     Ok(sessions)
 }
 
-pub fn merge_sessions(
-    sessions: &mut HashMap<String, Vec<Session>>,
-    mut git_sessions: HashMap<String, Vec<Session>>,
-) {
-    // Drain all (key, Vec<Session>) pairs out of git_sessions,
-    // moving them into `sessions`.
-    for (key, mut new_sessions) in git_sessions.drain() {
-        // If `key` already exists in `sessions`, append the new sessions.
-        // Otherwise, create a new entry.
-        sessions
-            .entry(key)
+fn merge_sessions(
+    mut s1: HashMap<String, Vec<Session>>,
+    mut s2: HashMap<String, Vec<Session>>,
+) -> HashMap<String, Vec<Session>> {
+    let mut ret: HashMap<String, Vec<Session>> = HashMap::new();
+
+    for (key, mut new_sessions) in s1.drain() {
+        ret.entry(key)
             .or_insert_with(Vec::new)
             .append(&mut new_sessions);
     }
-    // After this, `git_sessions` is empty (consumed),
-    // and `sessions` has all the data.
+    for (key, mut new_sessions) in s2.drain() {
+        ret.entry(key)
+            .or_insert_with(Vec::new)
+            .append(&mut new_sessions);
+    }
+    ret
 }
 
 #[cfg(test)]
