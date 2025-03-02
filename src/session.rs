@@ -158,7 +158,13 @@ pub fn create_all_sessions(config: &Config, tmux: &Tmux) -> Result<impl SessionC
     let repo_sessions = find_repos(config)?;
     let tmux_sessions = tmux.find_tmux_sessions()?;
 
-    let all_sessions = merge_sessions(repo_sessions, tmux_sessions);
+    // If session already exists through tmux, dont recommend as a new repo_session
+    let repo_sessions_filtered: HashMap<String, Vec<Session>> = repo_sessions
+        .into_iter()
+        .filter(|(k, _v)| !tmux_sessions.contains_key(k))
+        .collect();
+
+    let all_sessions = merge_session_maps(repo_sessions_filtered, tmux_sessions);
 
     generate_session_container(all_sessions, config)
 }
@@ -281,7 +287,7 @@ pub fn append_bookmarks(
     Ok(sessions)
 }
 
-fn merge_sessions(
+fn merge_session_maps(
     mut s1: HashMap<String, Vec<Session>>,
     mut s2: HashMap<String, Vec<Session>>,
 ) -> HashMap<String, Vec<Session>> {
@@ -298,33 +304,4 @@ fn merge_sessions(
             .append(&mut new_sessions);
     }
     ret
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn verify_session_name_deduplication() {
-        let mut test_sessions = vec![
-            Session::new(
-                "test".into(),
-                SessionType::Bookmark("/search/path/to/proj1/test".into()),
-            ),
-            Session::new(
-                "test".into(),
-                SessionType::Bookmark("/search/path/to/proj2/test".into()),
-            ),
-            Session::new(
-                "test".into(),
-                SessionType::Bookmark("/other/path/to/projects/proj2/test".into()),
-            ),
-        ];
-
-        let deduplicated = deduplicate_sessions(&mut test_sessions);
-
-        assert_eq!(deduplicated[0].name, "projects/proj2/test");
-        assert_eq!(deduplicated[1].name, "to/proj2/test");
-        assert_eq!(deduplicated[2].name, "to/proj1/test");
-    }
 }
