@@ -1,12 +1,10 @@
 use std::{
     collections::HashMap,
-    fmt::Debug,
     path::{Path, PathBuf},
 };
 
 use error_stack::ResultExt;
 use git2::Repository;
-use std::fmt;
 
 use crate::{
     configs::Config,
@@ -17,7 +15,6 @@ use crate::{
     Result,
 };
 
-#[derive(Debug)]
 pub struct Session {
     pub name: String,
     pub session_type: SessionType,
@@ -27,23 +24,6 @@ pub enum SessionType {
     Git(Repository),
     Bookmark(PathBuf),
     Standard(PathBuf),
-}
-
-impl Debug for SessionType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let path: &Path = match self {
-            SessionType::Git(repo) if repo.is_bare() => repo.path(),
-            SessionType::Git(repo) => repo.path().parent().unwrap(),
-            SessionType::Bookmark(p) => p,
-            SessionType::Standard(p) => p,
-        };
-
-        match self {
-            SessionType::Git(_) => write!(f, "Git({:?})", path),
-            SessionType::Bookmark(_) => write!(f, "Bookmark({:?})", path),
-            SessionType::Standard(_) => write!(f, "Standard({:?})", path),
-        }
-    }
 }
 
 impl Session {

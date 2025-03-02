@@ -47,7 +47,6 @@ fn main() -> Result<()> {
     };
 
     let all_sessions = create_all_sessions(&config, &tmux)?;
-    dbg!(&all_sessions.list());
     let all_session_strings = all_sessions.list();
 
     let selected_str = if let Some(str) =
