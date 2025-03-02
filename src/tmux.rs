@@ -13,9 +13,7 @@ use crate::{
     configs::Config,
     dirty_paths::DirtyUtf8Path,
     error::{Result, TmsError},
-    session::{
-        Session, SessionType,
-    },
+    session::{Session, SessionType},
 };
 
 #[derive(Clone)]
@@ -295,25 +293,30 @@ impl Tmux {
     }
 
     pub fn find_tmux_sessions(&self) -> Result<HashMap<String, Vec<Session>>> {
-        let mut existing: HashMap<String, Vec<Session>> = HashMap::new();
-        let sessions = self
-            .list_sessions("'#{session_name}'")
+        let raw = self
+            .list_sessions("'#{session_name},#{pane_start_path}'")
             .replace('\'', "")
             .replace("\n\n", "\n");
 
-        let sessions: Vec<&str> = sessions.trim().split('\n').collect();
-        let sessions: Vec<Session> = sessions
-            .iter()
-            .map(|&name| Session::new(name.to_string(), SessionType::Standard(PathBuf::new())))
-            .collect();
-        for session in sessions {
-            existing
-                .entry(session.name.to_string())
-                .or_insert(vec![])
-                .push(session);
-        }
+        let sessions = raw
+            .trim()
+            .lines()
+            .filter_map(|line| line.split_once(','))
+            .map(|(name, path)| {
+                // Trim each part to remove any extraneous whitespace.
+                let session_name = name.trim().to_string();
+                let session_path = PathBuf::from(path.trim());
+                Session::new(session_name, SessionType::Standard(session_path))
+            });
 
-        Ok(existing)
+        let grouped = sessions.fold(HashMap::new(), |mut acc, session| {
+            acc.entry(session.name.to_string())
+                .or_insert_with(Vec::new)
+                .push(session);
+            acc
+        });
+
+        Ok(grouped)
     }
 }
 
