@@ -9,7 +9,7 @@ use crate::{
     execute_command, get_single_selection,
     marks::{marks_command, MarksCommand},
     picker::Preview,
-    session::{create_repo_sessions, SessionContainer},
+    session::{create_all_sessions, create_repo_sessions, SessionContainer},
     tmux::Tmux,
     Result, TmsError,
 };
@@ -791,7 +791,7 @@ fn bookmark_command(args: &BookmarkCommand, mut config: Config) -> Result<()> {
 }
 
 fn open_session_command(args: &OpenSessionCommand, config: Config, tmux: &Tmux) -> Result<()> {
-    let sessions = create_repo_sessions(&config)?;
+    let sessions = create_all_sessions(&config, &tmux)?;
 
     if let Some(session) = sessions.find_session(&args.session) {
         session.switch_to(tmux, &config)?;
