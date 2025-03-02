@@ -44,7 +44,7 @@ impl Session {
         match &self.session_type {
             SessionType::Git(repo) => self.switch_to_repo_session(repo, tmux, config),
             SessionType::Bookmark(path) => self.switch_to_bookmark_session(tmux, path, config),
-            SessionType::Standard(path) => self.switch_to_normal_session(tmux, path, config),
+            SessionType::Standard(path) => self.switch_to_standard_session(tmux, path, config),
         }
     }
 
@@ -89,7 +89,12 @@ impl Session {
         Ok(())
     }
 
-    fn switch_to_normal_session(&self, tmux: &Tmux, path: &PathBuf, config: &Config) -> Result<()> {
+    fn switch_to_standard_session(
+        &self,
+        tmux: &Tmux,
+        path: &PathBuf,
+        config: &Config,
+    ) -> Result<()> {
         let session_name = self.name.to_string();
 
         if !tmux.session_exists(&session_name) {
