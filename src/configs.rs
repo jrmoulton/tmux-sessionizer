@@ -185,8 +185,8 @@ impl Config {
     }
 
     pub fn search_dirs(&self) -> Result<Vec<SearchDirectory>> {
-        if self.search_dirs.as_ref().map_or(true, Vec::is_empty)
-            && self.search_paths.as_ref().map_or(true, Vec::is_empty)
+        if self.search_dirs.as_ref().is_none_or(Vec::is_empty)
+            && self.search_paths.as_ref().is_none_or(Vec::is_empty)
         {
             return Err(ConfigError::NoDefaultSearchPath)
             .attach_printable(
