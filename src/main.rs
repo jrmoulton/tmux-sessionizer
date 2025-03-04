@@ -9,7 +9,7 @@ use tms::{
     error::{Result, Suggestion},
     get_single_selection,
     picker::Preview,
-    session::{create_sessions, SessionContainer},
+    session::{create_all_sessions, SessionContainer},
     tmux::Tmux,
 };
 
@@ -46,17 +46,18 @@ fn main() -> Result<()> {
         SubCommandGiven::No(config) => config, // continue
     };
 
-    let sessions = create_sessions(&config)?;
-    let session_strings = sessions.list();
+    let all_sessions = create_all_sessions(&config, &tmux)?;
+    let all_session_strings = all_sessions.list();
 
-    let selected_str =
-        if let Some(str) = get_single_selection(&session_strings, Preview::None, &config, &tmux)? {
-            str
-        } else {
-            return Ok(());
-        };
+    let selected_str = if let Some(str) =
+        get_single_selection(&all_session_strings, Preview::None, &config, &tmux)?
+    {
+        str
+    } else {
+        return Ok(());
+    };
 
-    if let Some(session) = sessions.find_session(&selected_str) {
+    if let Some(session) = all_sessions.find_session(&selected_str) {
         session.switch_to(&tmux, &config)?;
     }
 

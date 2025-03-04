@@ -23,6 +23,7 @@ pub struct Session {
 pub enum SessionType {
     Git(Repository),
     Bookmark(PathBuf),
+    Standard(PathBuf),
 }
 
 impl Session {
@@ -35,6 +36,7 @@ impl Session {
             SessionType::Git(repo) if repo.is_bare() => repo.path(),
             SessionType::Git(repo) => repo.path().parent().unwrap(),
             SessionType::Bookmark(path) => path,
+            SessionType::Standard(path) => path,
         }
     }
 
@@ -42,6 +44,7 @@ impl Session {
         match &self.session_type {
             SessionType::Git(repo) => self.switch_to_repo_session(repo, tmux, config),
             SessionType::Bookmark(path) => self.switch_to_bookmark_session(tmux, path, config),
+            SessionType::Standard(path) => self.switch_to_standard_session(tmux, path, config),
         }
     }
 
@@ -85,6 +88,23 @@ impl Session {
 
         Ok(())
     }
+
+    fn switch_to_standard_session(
+        &self,
+        tmux: &Tmux,
+        path: &PathBuf,
+        config: &Config,
+    ) -> Result<()> {
+        let session_name = self.name.to_string();
+
+        if !tmux.session_exists(&session_name) {
+            tmux.new_session(Some(&session_name), path.to_str());
+            tmux.run_session_create_script(path, &session_name, config)?;
+        }
+
+        tmux.switch_to_session(&session_name);
+        Ok(())
+    }
 }
 
 pub trait SessionContainer {
@@ -110,7 +130,7 @@ impl SessionContainer for HashMap<String, Session> {
     }
 }
 
-pub fn create_sessions(config: &Config) -> Result<impl SessionContainer> {
+pub fn create_repo_sessions(config: &Config) -> Result<impl SessionContainer> {
     let mut sessions = find_repos(config)?;
     sessions = append_bookmarks(config, sessions)?;
 
@@ -119,7 +139,22 @@ pub fn create_sessions(config: &Config) -> Result<impl SessionContainer> {
     Ok(sessions)
 }
 
-fn generate_session_container(
+pub fn create_all_sessions(config: &Config, tmux: &Tmux) -> Result<impl SessionContainer> {
+    let repo_sessions = find_repos(config)?;
+    let tmux_sessions = tmux.find_tmux_sessions()?;
+
+    // If session already exists through tmux, dont recommend as a new repo_session
+    let repo_sessions_filtered: HashMap<String, Vec<Session>> = repo_sessions
+        .into_iter()
+        .filter(|(k, _v)| !tmux_sessions.contains_key(k))
+        .collect();
+
+    let all_sessions = merge_session_maps(repo_sessions_filtered, tmux_sessions);
+
+    generate_session_container(all_sessions, config)
+}
+
+pub fn generate_session_container(
     mut sessions: HashMap<String, Vec<Session>>,
     config: &Config,
 ) -> Result<impl SessionContainer> {
@@ -215,7 +250,7 @@ fn deduplicate_sessions(duplicate_sessions: &mut Vec<Session>) -> Vec<Session> {
     deduplicated
 }
 
-fn append_bookmarks(
+pub fn append_bookmarks(
     config: &Config,
     mut sessions: HashMap<String, Vec<Session>>,
 ) -> Result<HashMap<String, Vec<Session>>> {
@@ -237,10 +272,28 @@ fn append_bookmarks(
     Ok(sessions)
 }
 
+fn merge_session_maps(
+    mut s1: HashMap<String, Vec<Session>>,
+    mut s2: HashMap<String, Vec<Session>>,
+) -> HashMap<String, Vec<Session>> {
+    let mut ret: HashMap<String, Vec<Session>> = HashMap::new();
+
+    for (key, mut new_sessions) in s1.drain() {
+        ret.entry(key)
+            .or_insert_with(Vec::new)
+            .append(&mut new_sessions);
+    }
+    for (key, mut new_sessions) in s2.drain() {
+        ret.entry(key)
+            .or_insert_with(Vec::new)
+            .append(&mut new_sessions);
+    }
+    ret
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn verify_session_name_deduplication() {
         let mut test_sessions = vec![
@@ -263,5 +316,71 @@ mod tests {
         assert_eq!(deduplicated[0].name, "projects/proj2/test");
         assert_eq!(deduplicated[1].name, "to/proj2/test");
         assert_eq!(deduplicated[2].name, "to/proj1/test");
+    }
+
+    #[test]
+    fn test_merge_session_maps_non_overlapping() {
+        let mut map1 = HashMap::new();
+        let mut map2 = HashMap::new();
+
+        let session_a = Session::new(
+            "Session A".to_string(),
+            SessionType::Standard(PathBuf::from("/path/to/a")),
+        );
+        let session_b = Session::new(
+            "Session B".to_string(),
+            SessionType::Standard(PathBuf::from("/path/to/b")),
+        );
+
+        map1.insert("key1".to_string(), vec![session_a]);
+        map2.insert("key2".to_string(), vec![session_b]);
+
+        let merged = merge_session_maps(map1, map2);
+
+        // Expect both keys to exist independently.
+        assert_eq!(merged.len(), 2);
+        assert!(merged.contains_key("key1"));
+        assert!(merged.contains_key("key2"));
+        assert_eq!(merged["key1"].len(), 1);
+        assert_eq!(merged["key2"].len(), 1);
+    }
+
+    #[test]
+    fn test_merge_session_maps_overlapping() {
+        let mut map1 = HashMap::new();
+        let mut map2 = HashMap::new();
+
+        let session_a = Session::new(
+            "Session A".to_string(),
+            SessionType::Standard(PathBuf::from("/path/to/a")),
+        );
+        let session_b = Session::new(
+            "Session B".to_string(),
+            SessionType::Standard(PathBuf::from("/path/to/b")),
+        );
+
+        // Both maps have the same key "shared_key"
+        map1.insert("shared_key".to_string(), vec![session_a]);
+        map2.insert("shared_key".to_string(), vec![session_b]);
+
+        let merged = merge_session_maps(map1, map2);
+
+        // Expect one key "shared_key" with both sessions, map1's session first.
+        assert_eq!(merged.len(), 1);
+        let sessions = merged.get("shared_key").unwrap();
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(sessions[0].name, "Session A");
+        assert_eq!(sessions[1].name, "Session B");
+    }
+
+    #[test]
+    fn test_merge_session_maps_empty() {
+        let map1: HashMap<String, Vec<Session>> = HashMap::new();
+        let map2: HashMap<String, Vec<Session>> = HashMap::new();
+
+        let merged = merge_session_maps(map1, map2);
+
+        // Expect an empty map.
+        assert!(merged.is_empty());
     }
 }

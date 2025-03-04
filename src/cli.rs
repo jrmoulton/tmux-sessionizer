@@ -9,7 +9,7 @@ use crate::{
     execute_command, get_single_selection,
     marks::{marks_command, MarksCommand},
     picker::Preview,
-    session::{create_sessions, SessionContainer},
+    session::{create_all_sessions, create_repo_sessions, SessionContainer},
     tmux::Tmux,
     Result, TmsError,
 };
@@ -314,7 +314,7 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
 
     let mut sessions: Vec<String> = sessions.into_iter().map(|s| s.0.to_string()).collect();
     if let Some(true) = config.switch_filter_unknown {
-        let configured = create_sessions(&config)?;
+        let configured = create_repo_sessions(&config)?;
 
         sessions = sessions
             .into_iter()
@@ -791,7 +791,7 @@ fn bookmark_command(args: &BookmarkCommand, mut config: Config) -> Result<()> {
 }
 
 fn open_session_command(args: &OpenSessionCommand, config: Config, tmux: &Tmux) -> Result<()> {
-    let sessions = create_sessions(&config)?;
+    let sessions = create_all_sessions(&config, &tmux)?;
 
     if let Some(session) = sessions.find_session(&args.session) {
         session.switch_to(tmux, &config)?;
@@ -804,7 +804,7 @@ fn open_session_command(args: &OpenSessionCommand, config: Config, tmux: &Tmux) 
 fn open_session_completion_candidates() -> Vec<CompletionCandidate> {
     Config::new()
         .change_context(TmsError::ConfigError)
-        .and_then(|config| create_sessions(&config))
+        .and_then(|config| create_repo_sessions(&config))
         .map(|sessions| {
             sessions
                 .list()
