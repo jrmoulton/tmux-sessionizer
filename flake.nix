@@ -3,75 +3,119 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    crane.url = "github:ipetkov/crane";
     flake-parts.url = "github:hercules-ci/flake-parts";
   };
 
-  outputs = inputs @ {
-    self,
-    nixpkgs,
-    flake-parts,
-    ...
-  }:
-    flake-parts.lib.mkFlake {inherit inputs;} {
+  outputs =
+    inputs@{
+      self,
+      nixpkgs,
+      flake-parts,
+      rust-overlay,
+      crane,
+      ...
+    }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
         "aarch64-linux"
         "x86_64-darwin"
         "aarch64-darwin"
       ];
-      perSystem = {
-        config,
-        self',
-        inputs',
-        pkgs,
-        system,
-        ...
-      }: let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [
-            self.overlays.default
-          ];
+      perSystem =
+        {
+          config,
+          self',
+          inputs',
+          pkgs,
+          system,
+          ...
+        }:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [
+              self.overlays.default
+              (import rust-overlay)
+            ];
+          };
+          rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+          commonArgs = with pkgs; {
+            src = craneLib.cleanCargoSource ./.;
+            strictDeps = true;
+
+            OPENSSL_NO_VENDOR = 1;
+            buildInputs =
+              [
+                openssl
+              ]
+              ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+                libgit2
+                darwin.Security
+              ];
+            nativeBuildInputs = [
+              pkg-config
+              installShellFiles
+            ];
+          };
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+          tmux-sessionizer = craneLib.buildPackage (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              postInstall =
+                with pkgs;
+                lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
+                  installShellCompletion --cmd tms \
+                    --bash <(COMPLETE=bash $out/bin/tms) \
+                    --fish <(COMPLETE=fish $out/bin/tms) \
+                    --zsh <(COMPLETE=zsh $out/bin/tms)
+                '';
+            }
+          );
+        in
+        {
+          packages = rec {
+            default = tmux-sessionizer;
+            inherit tmux-sessionizer;
+          };
+
+          checks = {
+            inherit (self.packages.${system}) tmux-sessionizer;
+            clippy = craneLib.cargoClippy (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+                cargoClippyExtraArgs = "--all-targets --all-features -- --D warnings";
+              }
+            );
+            fmt = craneLib.cargoFmt commonArgs;
+            test = craneLib.cargoTest (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+              }
+            );
+          };
+
+          devShells.default = craneLib.devShell {
+            OPENSSL_NO_VENDOR = 1;
+            inputsFrom = [ tmux-sessionizer ];
+            packages = with pkgs; [
+              rust-analyzer
+            ];
+          };
         };
-      in {
-        packages = rec {
-          default = tmux-sessionizer;
-          inherit (pkgs) tmux-sessionizer;
-        };
-        devShells.default = pkgs.mkShell {
-          name = "rust devShell";
-          OPENSSL_NO_VENDOR = 1;
-          buildInputs = with pkgs;
-          with pkgs.rustPlatform; [
-            cargo
-            clippy
-            rustc
-            rustfmt
-            rust-analyzer
-            openssl
-            pkg-config
-          ]
-          ++ lib.optionals stdenv.isDarwin [
-            libgit2
-            darwin.Security
-           ];
-        };
-      };
+
       flake = {
         overlays.default = final: prev: {
-          tmux-sessionizer = prev.tmux-sessionizer.overrideAttrs (oa: {
-            src = self;
-            version = ((final.lib.importTOML "${self}/Cargo.toml").package).version;
-            cargoDeps = final.rustPlatform.importCargoLock {
-              lockFile = self + "/Cargo.lock";
-            };
-            postInstall = final.lib.optionalString (final.stdenv.buildPlatform.canExecute final.stdenv.hostPlatform) ''
-              installShellCompletion --cmd tms \
-                --bash <(COMPLETE=bash $out/bin/tms) \
-                --fish <(COMPLETE=fish $out/bin/tms) \
-                --zsh <(COMPLETE=zsh $out/bin/tms)
-            '';
-          });
+          inherit (self.packages.${final.system}) tmux-sessionizer;
         };
 
       };

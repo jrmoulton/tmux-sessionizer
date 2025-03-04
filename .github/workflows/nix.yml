@@ -1,0 +1,14 @@
+on: [push, pull_request]
+
+name: Nix
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install nix
+      uses: cachix/install-nix-action@v30
+
+    - uses: actions/checkout@v4
+    - name: Build and check (clippy, format, tests)
+      run: nix flake check -L
