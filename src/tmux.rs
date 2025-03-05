@@ -245,6 +245,10 @@ impl Tmux {
         self.execute_tmux_command(&["capture-pane", "-ep", "-t", target_pane])
     }
 
+    pub fn move_window(&self, source_window: &str, target_window: &str) -> process::Output {
+        self.execute_tmux_command(&["move-window", "-s", source_window, "-t", target_window])
+    }
+
     pub fn set_up_tmux_env(&self, repo: &Repository, repo_name: &str) -> Result<()> {
         if repo.is_bare() && repo.head().is_ok() {
             if repo
@@ -266,20 +270,39 @@ impl Tmux {
                 )
                 .change_context(TmsError::GitError)?;
             }
-            for tree in repo.worktrees().change_context(TmsError::GitError)?.iter() {
+
+            // Moves the inital window to index 0 so it doesn't clash with tmux configs which use
+            // index 1 as the start
+            self.move_window(&format!("{repo_name}:^"), &format!("{repo_name}:0"));
+
+            // Puts the main or master branch as the first window
+            let mut worktrees = Vec::new();
+            let repo_iter = repo.worktrees().change_context(TmsError::GitError)?;
+            for tree in repo_iter.iter() {
                 let tree = tree.ok_or(TmsError::NonUtf8Path).attach_printable(format!(
                     "The path to the found sub-tree {tree:?} has a non-utf8 path",
                 ))?;
                 let window_name = tree.to_string();
+
+                if window_name == "main" || window_name == "master" {
+                    worktrees.insert(0, tree);
+                } else {
+                    worktrees.push(tree);
+                }
+            }
+
+            // Creates the windows making sure master/main is first
+            for window_name in worktrees {
                 let path_to_tree = repo
-                    .find_worktree(tree)
+                    .find_worktree(window_name)
                     .change_context(TmsError::GitError)?
                     .path()
                     .to_string()?;
 
-                self.new_window(Some(&window_name), Some(&path_to_tree), Some(repo_name));
+                self.new_window(Some(window_name), Some(&path_to_tree), Some(repo_name));
             }
-            // Kill that first extra window
+
+            // Kill that first initial window
             self.kill_window(&format!("{repo_name}:^"));
         }
         Ok(())
