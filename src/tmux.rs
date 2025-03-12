@@ -1,4 +1,10 @@
-use std::{env, os::unix::process::CommandExt, path::Path, process};
+use std::{
+    collections::HashMap,
+    env,
+    os::unix::process::CommandExt,
+    path::{Path, PathBuf},
+    process,
+};
 
 use error_stack::ResultExt;
 use git2::Repository;
@@ -7,6 +13,7 @@ use crate::{
     configs::Config,
     dirty_paths::DirtyUtf8Path,
     error::{Result, TmsError},
+    session::{Session, SessionType},
 };
 
 #[derive(Clone)]
@@ -109,18 +116,18 @@ impl Tmux {
         self.replace_with_tmux_command(&args)
     }
 
-    pub fn switch_to_session(&self, repo_short_name: &str) {
+    pub fn switch_to_session(&self, session_name: &str) {
         if !is_in_tmux_session() {
-            self.attach_session(Some(repo_short_name), None);
+            self.attach_session(Some(session_name), None);
         } else {
-            let result = self.switch_client(repo_short_name);
+            let result = self.switch_client(session_name);
             if !result.status.success() {
-                self.attach_session(Some(repo_short_name), None);
+                self.attach_session(Some(session_name), None);
             }
         }
     }
 
-    pub fn session_exists(&self, repo_short_name: &str) -> bool {
+    pub fn session_exists(&self, session_name: &str) -> bool {
         // Get the tmux sessions
         let sessions = self.list_sessions("'#S'");
 
@@ -130,7 +137,7 @@ impl Tmux {
             // tmux will return the output with extra ' and \n characters
             cleaned_line.retain(|char| char != '\'' && char != '\n');
 
-            cleaned_line == repo_short_name
+            cleaned_line == session_name
         })
     }
 
@@ -306,6 +313,33 @@ impl Tmux {
             self.kill_window(&format!("{repo_name}:^"));
         }
         Ok(())
+    }
+
+    pub fn find_tmux_sessions(&self) -> Result<HashMap<String, Vec<Session>>> {
+        let raw = self
+            .list_sessions("'#{session_name},#{pane_start_path}'")
+            .replace('\'', "")
+            .replace("\n\n", "\n");
+
+        let sessions = raw
+            .trim()
+            .lines()
+            .filter_map(|line| line.split_once(','))
+            .map(|(name, path)| {
+                // Trim each part to remove any extraneous whitespace.
+                let session_name = name.trim().to_string();
+                let session_path = PathBuf::from(path.trim());
+                Session::new(session_name, SessionType::Standard(session_path))
+            });
+
+        let grouped = sessions.fold(HashMap::new(), |mut acc, session| {
+            acc.entry(session.name.to_string())
+                .or_insert_with(Vec::new)
+                .push(session);
+            acc
+        });
+
+        Ok(grouped)
     }
 }
 
