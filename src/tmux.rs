@@ -1,8 +1,14 @@
-use std::{env, os::unix::process::CommandExt, path::Path, process};
+use std::{
+    env,
+    os::unix::process::CommandExt,
+    path::Path,
+    process::{self, Stdio},
+};
 
 use error_stack::ResultExt;
-use git2::Repository;
+use gix::{bstr::ByteSlice, Repository};
 
+use crate::repos::Prunable;
 use crate::{
     configs::Config,
     dirty_paths::DirtyUtf8Path,
@@ -250,61 +256,61 @@ impl Tmux {
     }
 
     pub fn set_up_tmux_env(&self, repo: &Repository, repo_name: &str) -> Result<()> {
-        if repo.is_bare() && repo.head().is_ok() {
-            if repo
-                .worktrees()
-                .change_context(TmsError::GitError)?
-                .is_empty()
-            {
-                // Add the default branch as a tree (usually either main or master)
-                let head = repo.head().change_context(TmsError::GitError)?;
-                let head_short = head
-                    .shorthand()
-                    .ok_or(TmsError::NonUtf8Path)
-                    .attach_printable("The selected repository has an unusable path")?;
-                let path = repo.path().join(head_short);
-                repo.worktree(
-                    head_short,
-                    &path,
-                    Some(git2::WorktreeAddOptions::new().reference(Some(&head))),
-                )
-                .change_context(TmsError::GitError)?;
-            }
-
-            // Moves the inital window to index 0 so it doesn't clash with tmux configs which use
-            // index 1 as the start
-            self.move_window(&format!("{repo_name}:^"), &format!("{repo_name}:0"));
-
-            // Puts the main or master branch as the first window
-            let mut worktrees = Vec::new();
-            let repo_iter = repo.worktrees().change_context(TmsError::GitError)?;
-            for tree in repo_iter.iter() {
-                let tree = tree.ok_or(TmsError::NonUtf8Path).attach_printable(format!(
-                    "The path to the found sub-tree {tree:?} has a non-utf8 path",
-                ))?;
-                let window_name = tree.to_string();
-
-                if window_name == "main" || window_name == "master" {
-                    worktrees.insert(0, tree);
-                } else {
-                    worktrees.push(tree);
-                }
-            }
-
-            // Creates the windows making sure master/main is first
-            for window_name in worktrees {
-                let path_to_tree = repo
-                    .find_worktree(window_name)
-                    .change_context(TmsError::GitError)?
-                    .path()
-                    .to_string()?;
-
-                self.new_window(Some(window_name), Some(&path_to_tree), Some(repo_name));
-            }
-
-            // Kill that first initial window
-            self.kill_window(&format!("{repo_name}:^"));
+        if !repo.is_bare() {
+            return Ok(());
         }
+        let Ok(head) = repo.head_name() else {
+            return Ok(());
+        };
+        let worktrees = repo.worktrees().change_context(TmsError::GitError)?;
+        let worktrees = worktrees
+            .iter()
+            // check only for non prunable worktrees
+            .filter(|worktree| !worktree.is_prunable())
+            .collect::<Vec<_>>();
+        if worktrees.is_empty() {
+            // Add the default branch as a tree (usually either main or master)
+            let head = head.ok_or(TmsError::GitError)?;
+            let head_short = head
+                .shorten()
+                .to_str()
+                .change_context(TmsError::NonUtf8Path)?;
+            process::Command::new("git")
+                .current_dir(repo.path())
+                .args(["worktree", "add", head_short])
+                .stderr(Stdio::inherit())
+                .output()
+                .change_context(TmsError::GitError)?;
+        }
+
+        // Moves the inital window to index 0 so it doesn't clash with tmux configs which use
+        // index 1 as the start
+        self.move_window(&format!("{repo_name}:^"), &format!("{repo_name}:0"));
+
+        // Puts the main or master branch as the first window
+        let mut windows = Vec::new();
+        let worktrees = repo.worktrees().change_context(TmsError::GitError)?;
+        for tree in worktrees.iter().filter(|worktree| !worktree.is_prunable()) {
+            let window_name = tree.id().to_str().change_context(TmsError::GitError)?;
+            if window_name == "main" || window_name == "master" {
+                windows.insert(0, (window_name, tree));
+            } else {
+                windows.push((window_name, tree));
+            }
+        }
+
+        // Creates the windows making sure master/main is first
+        for (window_name, tree) in windows {
+            let path_to_tree = tree
+                .base()
+                .change_context(TmsError::GitError)?
+                .to_string()?;
+
+            self.new_window(Some(window_name), Some(&path_to_tree), Some(repo_name));
+        }
+
+        // Kill that first initial window
+        self.kill_window(&format!("{repo_name}:^"));
         Ok(())
     }
 }
