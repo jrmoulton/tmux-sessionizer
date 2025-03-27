@@ -56,7 +56,6 @@
                 openssl
               ]
               ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-                libgit2
                 darwin.Security
               ];
             nativeBuildInputs = [

@@ -1,7 +1,12 @@
-use std::{collections::HashMap, env::current_dir, fs::canonicalize, path::PathBuf};
+use std::{
+    collections::HashMap,
+    env::current_dir,
+    fs::canonicalize,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
 
 use crate::{
-    clone::git_clone,
     configs::{
         CloneRepoSwitchConfig, Config, ConfigExport, SearchDirectory, SessionSortOrderConfig,
     },
@@ -9,6 +14,7 @@ use crate::{
     execute_command, get_single_selection,
     marks::{marks_command, MarksCommand},
     picker::Preview,
+    repos::Prunable,
     session::{create_sessions, SessionContainer},
     tmux::Tmux,
     Result, TmsError,
@@ -16,7 +22,7 @@ use crate::{
 use clap::{Args, Parser, Subcommand};
 use clap_complete::{ArgValueCandidates, CompletionCandidate};
 use error_stack::ResultExt;
-use git2::Repository;
+use gix::Repository;
 use ratatui::style::Color;
 
 #[derive(Debug, Parser)]
@@ -623,26 +629,30 @@ fn refresh_command(args: &RefreshCommand, tmux: &Tmux) -> Result<()> {
         .map(|line| line.replace('\'', ""))
         .collect();
 
-    if let Ok(repository) = Repository::open(&session_path) {
+    if let Ok(repository) = gix::open(&session_path) {
         let mut num_worktree_windows = 0;
         if let Ok(worktrees) = repository.worktrees() {
-            for worktree_name in worktrees.iter().flatten() {
-                let worktree = repository
-                    .find_worktree(worktree_name)
-                    .change_context(TmsError::GitError)?;
-                if existing_window_names.contains(&String::from(worktree_name)) {
+            for worktree in worktrees.iter() {
+                let worktree_name = worktree.id().to_string();
+                if existing_window_names.contains(&worktree_name) {
                     num_worktree_windows += 1;
                     continue;
                 }
-                if !worktree.is_prunable(None).unwrap_or_default() {
-                    num_worktree_windows += 1;
+                if worktree.is_prunable() {
                     // prunable worktrees can have an invalid path so skip that
-                    tmux.new_window(
-                        Some(worktree_name),
-                        Some(&worktree.path().to_string()?),
-                        Some(&session_name),
-                    );
+                    continue;
                 }
+                num_worktree_windows += 1;
+                tmux.new_window(
+                    Some(&worktree_name),
+                    Some(
+                        &worktree
+                            .base()
+                            .change_context(TmsError::GitError)?
+                            .to_string()?,
+                    ),
+                    Some(&session_name),
+                );
             }
         }
         //check if a window is needed for non worktree
@@ -703,7 +713,6 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
 
     let previous_session = tmux.current_session("#{session_name}");
 
-    println!("Cloning into '{repo_name}'...");
     let repo = git_clone(&args.repository, &path)?;
 
     let mut session_name = repo_name.to_string();
@@ -740,13 +749,28 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
     Ok(())
 }
 
+fn git_clone(repo: &str, target: &Path) -> Result<Repository> {
+    std::fs::create_dir_all(target).change_context(TmsError::IoError)?;
+    let mut cmd = Command::new("git")
+        .current_dir(target.parent().ok_or(TmsError::IoError)?)
+        .args(["clone", repo, target.to_str().ok_or(TmsError::NonUtf8Path)?])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .change_context(TmsError::GitError)?;
+
+    cmd.wait().change_context(TmsError::GitError)?;
+    let repo = gix::open(target).change_context(TmsError::GitError)?;
+    Ok(repo)
+}
+
 fn init_repo_command(args: &InitRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
     let Some(mut path) = pick_search_path(&config, tmux)? else {
         return Ok(());
     };
     path.push(&args.repository);
 
-    let repo = Repository::init(&path).change_context(TmsError::GitError)?;
+    let repo = gix::init(&path).change_context(TmsError::GitError)?;
 
     let mut session_name = args.repository.to_string();
 

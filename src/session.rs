@@ -4,7 +4,7 @@ use std::{
 };
 
 use error_stack::ResultExt;
-use git2::Repository;
+use gix::Repository;
 
 use crate::{
     configs::Config,
@@ -54,7 +54,7 @@ impl Session {
         let path = if repo.is_bare() {
             repo.path().to_path_buf().to_string()?
         } else {
-            repo.workdir()
+            repo.work_dir()
                 .expect("bare repositories should all have parent directories")
                 .canonicalize()
                 .change_context(TmsError::IoError)?
@@ -153,7 +153,7 @@ fn insert_session(
     };
     if let SessionType::Git(repo) = &session.session_type {
         if config.search_submodules == Some(true) {
-            if let Ok(submodules) = repo.submodules() {
+            if let Ok(Some(submodules)) = repo.submodules() {
                 find_submodules(submodules, &visible_name, sessions, config)?;
             }
         }
