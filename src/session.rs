@@ -4,13 +4,12 @@ use std::{
 };
 
 use error_stack::ResultExt;
-use git2::Repository;
 
 use crate::{
     configs::Config,
     dirty_paths::DirtyUtf8Path,
     error::TmsError,
-    repos::{find_repos, find_submodules},
+    repos::{find_repos, find_submodules, RepoProvider},
     tmux::Tmux,
     Result,
 };
@@ -21,7 +20,7 @@ pub struct Session {
 }
 
 pub enum SessionType {
-    Git(Repository),
+    Git(RepoProvider),
     Bookmark(PathBuf),
 }
 
@@ -47,14 +46,14 @@ impl Session {
 
     fn switch_to_repo_session(
         &self,
-        repo: &Repository,
+        repo: &RepoProvider,
         tmux: &Tmux,
         config: &Config,
     ) -> Result<()> {
         let path = if repo.is_bare() {
             repo.path().to_path_buf().to_string()?
         } else {
-            repo.workdir()
+            repo.work_dir()
                 .expect("bare repositories should all have parent directories")
                 .canonicalize()
                 .change_context(TmsError::IoError)?
@@ -64,7 +63,7 @@ impl Session {
 
         if !tmux.session_exists(&session_name) {
             tmux.new_session(Some(&session_name), Some(&path));
-            tmux.set_up_tmux_env(repo, &session_name)?;
+            tmux.set_up_tmux_env(repo, &session_name, config)?;
             tmux.run_session_create_script(self.path(), &session_name, config)?;
         }
 
@@ -153,7 +152,7 @@ fn insert_session(
     };
     if let SessionType::Git(repo) = &session.session_type {
         if config.search_submodules == Some(true) {
-            if let Ok(submodules) = repo.submodules() {
+            if let Ok(Some(submodules)) = repo.submodules() {
                 find_submodules(submodules, &visible_name, sessions, config)?;
             }
         }

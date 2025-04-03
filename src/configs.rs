@@ -52,6 +52,17 @@ pub struct Config {
     pub session_configs: Option<HashMap<String, SessionConfig>>,
     pub marks: Option<HashMap<String, String>>,
     pub clone_repo_switch: Option<CloneRepoSwitchConfig>,
+    pub vcs_providers: Option<Vec<VcsProviders>>,
+}
+
+pub const DEFAULT_VCS_PROVIDERS: &[VcsProviders] = &[VcsProviders::Git];
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum VcsProviders {
+    Git,
+    #[serde(alias = "jj")]
+    Jujutsu,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -71,6 +82,7 @@ pub struct ConfigExport {
     pub session_configs: HashMap<String, SessionConfig>,
     pub marks: HashMap<String, String>,
     pub clone_repo_switch: CloneRepoSwitchConfig,
+    pub vcs_providers: Vec<VcsProviders>,
 }
 
 impl From<Config> for ConfigExport {
@@ -97,6 +109,7 @@ impl From<Config> for ConfigExport {
             session_configs: value.session_configs.unwrap_or_default(),
             marks: value.marks.unwrap_or_default(),
             clone_repo_switch: value.clone_repo_switch.unwrap_or_default(),
+            vcs_providers: value.vcs_providers.unwrap_or(DEFAULT_VCS_PROVIDERS.into()),
         }
     }
 }
@@ -433,7 +446,7 @@ impl ValueEnum for SessionSortOrderConfig {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Deserialize, Copy, Clone, PartialEq, Eq)]
 pub enum CloneRepoSwitchConfig {
     #[default]
     Always,

@@ -1,5 +1,4 @@
 pub mod cli;
-mod clone;
 pub mod configs;
 pub mod dirty_paths;
 pub mod error;
