@@ -4,13 +4,12 @@ use std::{
 };
 
 use error_stack::ResultExt;
-use gix::Repository;
 
 use crate::{
     configs::Config,
     dirty_paths::DirtyUtf8Path,
     error::TmsError,
-    repos::{find_repos, find_submodules},
+    repos::{find_repos, find_submodules, RepoProvider},
     tmux::Tmux,
     Result,
 };
@@ -21,7 +20,7 @@ pub struct Session {
 }
 
 pub enum SessionType {
-    Git(Repository),
+    Git(RepoProvider),
     Bookmark(PathBuf),
 }
 
@@ -47,7 +46,7 @@ impl Session {
 
     fn switch_to_repo_session(
         &self,
-        repo: &Repository,
+        repo: &RepoProvider,
         tmux: &Tmux,
         config: &Config,
     ) -> Result<()> {
@@ -64,7 +63,7 @@ impl Session {
 
         if !tmux.session_exists(&session_name) {
             tmux.new_session(Some(&session_name), Some(&path));
-            tmux.set_up_tmux_env(repo, &session_name)?;
+            tmux.set_up_tmux_env(repo, &session_name, config)?;
             tmux.run_session_create_script(self.path(), &session_name, config)?;
         }
 
