@@ -558,8 +558,11 @@ fn sessions_subcommand(tmux: &Tmux) -> Result<()> {
 fn rename_subcommand(args: &RenameCommand, tmux: &Tmux) -> Result<()> {
     let new_session_name = &args.name;
 
-    let current_session = tmux.display_message("'#S'");
-    let current_session = current_session.trim();
+    let current_session = tmux
+        .display_message("'#S'")
+        .trim()
+        .replace('\'', "")
+        .to_string();
 
     let panes = tmux.list_windows(
         "'#{window_index}.#{pane_index},#{pane_current_command},#{pane_current_path}'",
@@ -573,22 +576,25 @@ fn rename_subcommand(args: &RenameCommand, tmux: &Tmux) -> Result<()> {
         .map(|window| {
             let mut _window: Vec<&str> = window.split(',').collect();
 
-            let pane_index = _window[0];
+            let pane_index = _window[0].replace('\'', "");
             let pane_details: HashMap<String, String> = HashMap::from([
                 (String::from("command"), _window[1].to_string()),
-                (String::from("cwd"), _window[2].to_string()),
+                (
+                    String::from("cwd"),
+                    _window[2].to_string().replace('\'', ""),
+                ),
             ]);
 
             paneid_to_pane_deatils.insert(pane_index.to_string(), pane_details);
 
-            _window[0].to_string()
+            pane_index.to_string()
         })
         .collect();
 
     let first_pane_details = &paneid_to_pane_deatils[all_panes.first().unwrap()];
 
     let new_session_path: String =
-        String::from(&first_pane_details["cwd"]).replace(current_session, new_session_name);
+        String::from(&first_pane_details["cwd"]).replace(&current_session, new_session_name);
 
     let move_command_args: Vec<String> =
         [first_pane_details["cwd"].clone(), new_session_path.clone()].to_vec();
@@ -598,9 +604,9 @@ fn rename_subcommand(args: &RenameCommand, tmux: &Tmux) -> Result<()> {
         let pane_details = &paneid_to_pane_deatils[pane_index];
 
         let old_path = &pane_details["cwd"];
-        let new_path = old_path.replace(current_session, new_session_name);
+        let new_path = old_path.replace(&current_session, new_session_name);
 
-        let change_dir_cmd = format!("\"cd {new_path}\"");
+        let change_dir_cmd = format!("cd {new_path}");
         tmux.send_keys(&change_dir_cmd, Some(pane_index));
     }
 
