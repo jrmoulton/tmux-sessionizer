@@ -1,3 +1,5 @@
+mod preview;
+
 use std::{
     io::{self, Stdout},
     process,
@@ -8,21 +10,21 @@ use std::{
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
-    style::Colored,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use nucleo::{
     pattern::{CaseMatching, Normalization},
     Nucleo,
 };
+use preview::PreviewWidget;
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{self, Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
-    text::{Line, Span, Text},
+    layout::{self, Constraint, Direction, Layout},
+    style::Style,
+    text::{Line, Span},
     widgets::{
         block::Position, Block, Borders, HighlightSpacing, List, ListDirection, ListItem,
-        ListState, Paragraph, Wrap,
+        ListState, Paragraph,
     },
     Frame, Terminal,
 };
@@ -170,9 +172,10 @@ impl<'a> Picker<'a> {
         let preview_direction;
         let picker_pane;
         let preview_pane;
+        let area = f.area();
 
         let preview_split = if !matches!(self.preview, Preview::None) {
-            preview_direction = if f.area().width.div_ceil(2) >= f.area().height {
+            preview_direction = if area.width.div_ceil(2) >= area.height {
                 picker_pane = 0;
                 preview_pane = 1;
                 Direction::Horizontal
@@ -185,12 +188,12 @@ impl<'a> Picker<'a> {
                 preview_direction,
                 [Constraint::Percentage(50), Constraint::Percentage(50)],
             )
-            .split(f.area())
+            .split(area)
         } else {
             picker_pane = 0;
             preview_pane = 1;
             preview_direction = Direction::Horizontal;
-            Rc::new([f.area()])
+            Rc::new([area])
         };
 
         let layout = Layout::new(
@@ -243,23 +246,17 @@ impl<'a> Picker<'a> {
         });
 
         if !matches!(self.preview, Preview::None) {
-            self.render_preview(
-                f,
-                &colors.border_color(),
-                &preview_direction,
-                preview_split[preview_pane],
+            let preview = PreviewWidget::new(
+                self.get_preview_text(),
+                colors.border_color(),
+                preview_direction,
             );
+            f.render_widget(preview, preview_split[preview_pane]);
         }
     }
 
-    fn render_preview(
-        &self,
-        f: &mut Frame,
-        border_color: &Color,
-        direction: &Direction,
-        rect: Rect,
-    ) {
-        let text = if let Some(item_data) = self.get_selected() {
+    fn get_preview_text(&self) -> String {
+        if let Some(item_data) = self.get_selected() {
             let output = match self.preview {
                 Preview::SessionPane => self.tmux.capture_pane(item_data),
                 Preview::WindowPane => self.tmux.capture_pane(
@@ -280,25 +277,11 @@ impl<'a> Picker<'a> {
             if output.status.success() {
                 String::from_utf8(output.stdout).unwrap()
             } else {
-                "".to_string()
+                String::default()
             }
         } else {
-            "".to_string()
-        };
-        let text = str_to_text(&text, (rect.width - 1).into());
-        let border_position = if *direction == Direction::Horizontal {
-            Borders::LEFT
-        } else {
-            Borders::BOTTOM
-        };
-        let preview = Paragraph::new(text)
-            .block(
-                Block::default()
-                    .borders(border_position)
-                    .border_style(Style::default().fg(*border_color)),
-            )
-            .wrap(Wrap { trim: false });
-        f.render_widget(preview, rect);
+            String::default()
+        }
     }
 
     fn get_selected(&self) -> Option<&String> {
@@ -457,115 +440,3 @@ impl<'a> Picker<'a> {
 }
 
 fn request_redraw() {}
-
-fn str_to_text(s: &str, max: usize) -> Text {
-    let mut text = Text::default();
-    let mut style = Style::default();
-    let mut tspan = String::new();
-    let mut ansi_state;
-
-    for l in s.lines() {
-        let mut line = Line::default();
-        ansi_state = false;
-
-        for (i, ch) in l.chars().enumerate() {
-            if !ansi_state {
-                if ch == '\x1b' && l.chars().nth(i + 1) == Some('[') {
-                    if !tspan.is_empty() {
-                        let span = Span::styled(tspan.clone(), style);
-                        line.spans.push(span);
-                    }
-
-                    tspan.clear();
-                    ansi_state = true;
-                } else {
-                    tspan.push(ch);
-
-                    if (line.width() + tspan.chars().count()) == max || i == (l.chars().count() - 1)
-                    {
-                        let span = Span::styled(tspan.clone(), style);
-                        line.spans.push(span);
-                        tspan.clear();
-                        break;
-                    }
-                }
-            } else {
-                match ch {
-                    '[' => {}
-                    'm' => {
-                        style = match tspan.as_str() {
-                            "" => style.reset(),
-                            "0" => style.reset(),
-                            "1" => style.bold(),
-                            "3" => style.italic(),
-                            "4" => style.underlined(),
-                            "5" => style.rapid_blink(),
-                            "6" => style.slow_blink(),
-                            "7" => style.reversed(),
-                            "9" => style.crossed_out(),
-                            "22" => style.not_bold(),
-                            "23" => style.not_italic(),
-                            "24" => style.not_underlined(),
-                            "25" => style.not_rapid_blink().not_slow_blink(),
-                            "27" => style.not_reversed(),
-                            "29" => style.not_crossed_out(),
-                            "30" => style.fg(Color::Black),
-                            "31" => style.fg(Color::Red),
-                            "32" => style.fg(Color::Green),
-                            "33" => style.fg(Color::Yellow),
-                            "34" => style.fg(Color::Blue),
-                            "35" => style.fg(Color::Magenta),
-                            "36" => style.fg(Color::Cyan),
-                            "37" => style.fg(Color::Gray),
-                            "40" => style.bg(Color::Black),
-                            "41" => style.bg(Color::Red),
-                            "42" => style.bg(Color::Green),
-                            "43" => style.bg(Color::Yellow),
-                            "44" => style.bg(Color::Blue),
-                            "45" => style.bg(Color::Magenta),
-                            "46" => style.bg(Color::Cyan),
-                            "47" => style.bg(Color::Gray),
-                            "90" => style.fg(Color::DarkGray),
-                            "91" => style.fg(Color::LightRed),
-                            "92" => style.fg(Color::LightGreen),
-                            "93" => style.fg(Color::LightYellow),
-                            "94" => style.fg(Color::LightBlue),
-                            "95" => style.fg(Color::LightMagenta),
-                            "96" => style.fg(Color::LightCyan),
-                            "97" => style.fg(Color::White),
-                            "100" => style.bg(Color::DarkGray),
-                            "101" => style.bg(Color::LightRed),
-                            "102" => style.bg(Color::LightGreen),
-                            "103" => style.bg(Color::LightYellow),
-                            "104" => style.bg(Color::LightBlue),
-                            "105" => style.bg(Color::LightMagenta),
-                            "106" => style.bg(Color::LightCyan),
-                            "107" => style.bg(Color::White),
-                            code => {
-                                if let Some(colored) = Colored::parse_ansi(code) {
-                                    match colored {
-                                        Colored::ForegroundColor(c) => style.fg(c.into()),
-                                        Colored::BackgroundColor(c) => style.bg(c.into()),
-                                        Colored::UnderlineColor(c) => {
-                                            style.underline_color(c.into())
-                                        }
-                                    }
-                                } else {
-                                    style
-                                }
-                            }
-                        };
-
-                        tspan.clear();
-                        ansi_state = false;
-                    }
-                    _ => tspan.push(ch),
-                }
-            }
-        }
-
-        text.lines.push(line);
-    }
-
-    text
-}
