@@ -1,6 +1,6 @@
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use error_stack::{report, Report, ResultExt};
-use git2::Submodule;
+use gix::{worktree::Proxy, Submodule};
 use std::{
     collections::{HashMap, VecDeque},
     fs,
@@ -12,6 +12,16 @@ use crate::{
     session::{Session, SessionContainer, SessionType},
     Result, TmsError,
 };
+
+pub trait Prunable {
+    fn is_prunable(&self) -> bool;
+}
+
+impl Prunable for Proxy<'_> {
+    fn is_prunable(&self) -> bool {
+        !self.base().is_ok_and(|path| path.exists())
+    }
+}
 
 pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
     let directories = config.search_dirs().change_context(TmsError::ConfigError)?;
@@ -36,8 +46,8 @@ pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
             }
         }
 
-        if let Ok(repo) = git2::Repository::open(&file.path) {
-            if repo.is_worktree() {
+        if let Ok(repo) = gix::open(&file.path) {
+            if !repo.main_repo().is_ok_and(|r| r == repo) {
                 continue;
             }
 
@@ -90,18 +100,18 @@ pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
     Ok(repos)
 }
 
-pub fn find_submodules(
-    submodules: Vec<Submodule>,
+pub fn find_submodules<'a>(
+    submodules: impl Iterator<Item = Submodule<'a>>,
     parent_name: &String,
     repos: &mut impl SessionContainer,
     config: &Config,
 ) -> Result<()> {
-    for submodule in submodules.iter() {
+    for submodule in submodules {
         let repo = match submodule.open() {
-            Ok(repo) => repo,
+            Ok(Some(repo)) => repo,
             _ => continue,
         };
-        let path = match repo.workdir() {
+        let path = match repo.work_dir() {
             Some(path) => path,
             _ => continue,
         };
@@ -119,7 +129,7 @@ pub fn find_submodules(
         };
 
         if config.recursive_submodules == Some(true) {
-            if let Ok(submodules) = repo.submodules() {
+            if let Ok(Some(submodules)) = repo.submodules() {
                 find_submodules(submodules, &name, repos, config)?;
             }
         }
