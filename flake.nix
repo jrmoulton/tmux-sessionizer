@@ -108,6 +108,8 @@
             inputsFrom = [ tmux-sessionizer ];
             packages = with pkgs; [
               rust-analyzer
+              cargo-dist
+              rustup # required for cargo-dist
             ];
           };
         };

@@ -17,3 +17,13 @@ pr-run-mode = "plan"
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+
+[dist.github-custom-runners]
+global = "ubuntu-latest"
+
+[dist.github-custom-runners.x86_64-unknown-linux-gnu]
+runner = "ubuntu-22.04"
+
+[dist.github-custom-runners.x86_64-unknown-linux-musl]
+runner = "ubuntu-latest"
+container = { image = "quay.io/pypa/musllinux_1_2_x86_64", host = "x86_64-unknown-linux-musl" }
