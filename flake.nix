@@ -51,13 +51,9 @@
             strictDeps = true;
 
             OPENSSL_NO_VENDOR = 1;
-            buildInputs =
-              [
-                openssl
-              ]
-              ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-                darwin.Security
-              ];
+            buildInputs = [
+              openssl
+            ];
             nativeBuildInputs = [
               pkg-config
               installShellFiles
@@ -76,6 +72,7 @@
                     --fish <(COMPLETE=fish $out/bin/tms) \
                     --zsh <(COMPLETE=zsh $out/bin/tms)
                 '';
+              meta.mainProgram = "tms";
             }
           );
         in

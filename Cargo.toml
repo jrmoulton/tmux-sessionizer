@@ -18,7 +18,7 @@ exclude = ["images/*"]
 [dependencies]
 
 gix = { version = "0.70.0", features = ["attributes"] }
-jj-lib = "0.29.0"
+jj-lib = "0.30.0"
 clap = { version = "4.5", features = ["cargo", "derive"] }
 clap_complete = { version = "4.5", features = [ "unstable-dynamic" ] }
 serde_derive = "1.0"
