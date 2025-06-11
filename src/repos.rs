@@ -227,6 +227,23 @@ impl RepoProvider {
                     Ok(())
                 })?;
 
+                if self.is_bare() {
+                    if let Ok(read_dir) = fs::read_dir(self.path()) {
+                        let mut sub = read_dir
+                            .filter_map(|entry| entry.ok())
+                            .map(|dir| dir.path())
+                            .filter(|path| path.is_dir())
+                            .filter_map(|path| RepoProvider::open(&path, config).ok())
+                            .filter(|repo| matches!(repo, RepoProvider::Jujutsu(_)))
+                            .filter(|repo| {
+                                repo.main_repo()
+                                    .is_some_and(|main| main == self.path().join(".jj/repo"))
+                            })
+                            .collect::<Vec<_>>();
+                        repos.append(&mut sub);
+                    }
+                }
+
                 let repos = repos
                     .into_iter()
                     .filter_map(|repo| match repo {
