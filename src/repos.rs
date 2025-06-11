@@ -13,6 +13,7 @@ use std::{
     collections::{HashMap, VecDeque},
     fs::{self},
     path::{Path, PathBuf},
+    process::{self, Stdio},
 };
 
 use crate::{
@@ -198,6 +199,33 @@ impl RepoProvider {
                 // current commit should be empty
                 parent.change_id() == store.root_commit().change_id()
                     && commit.is_empty(&*repo).unwrap_or_default()
+            }
+        }
+    }
+
+    pub fn add_worktree(&self, path: &Path) -> Result<Option<(String, PathBuf)>> {
+        match self {
+            RepoProvider::Git(_) => {
+                let Ok(head) = self.head_name() else {
+                    return Ok(None);
+                };
+                // Add the default branch as a tree (usually either main or master)
+                process::Command::new("git")
+                    .current_dir(path)
+                    .args(["worktree", "add", &head])
+                    .stderr(Stdio::inherit())
+                    .output()
+                    .change_context(TmsError::GitError)?;
+                Ok(Some((head.clone(), path.to_path_buf().join(&head))))
+            }
+            RepoProvider::Jujutsu(_) => {
+                process::Command::new("jj")
+                    .current_dir(path)
+                    .args(["workspace", "add", "-r", "trunk()", "trunk"])
+                    .stderr(Stdio::inherit())
+                    .output()
+                    .change_context(TmsError::GitError)?;
+                Ok(Some(("trunk".into(), path.to_path_buf().join("trunk"))))
             }
         }
     }
