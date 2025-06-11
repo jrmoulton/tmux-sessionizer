@@ -175,7 +175,30 @@ impl RepoProvider {
     pub fn is_bare(&self) -> bool {
         match self {
             RepoProvider::Git(repo) => repo.is_bare(),
-            RepoProvider::Jujutsu(_) => false,
+            RepoProvider::Jujutsu(workspace) => {
+                let loader = workspace.repo_loader();
+                let store = loader.store();
+                let Ok(repo) = loader.load_at_head() else {
+                    return false;
+                };
+                // currently checked out commit, get from current (default) workspace
+                let Some(commit_id) = repo.view().wc_commit_ids().get(workspace.workspace_name())
+                else {
+                    return false;
+                };
+                let Ok(commit) = store.get_commit(commit_id) else {
+                    return false;
+                };
+                // if parent is root commit then it's the only possible parent
+                let Some(Ok(parent)) = commit.parents().next() else {
+                    return false;
+                };
+
+                // root commit is direct parent of current commit => repo is effectively bare
+                // current commit should be empty
+                parent.change_id() == store.root_commit().change_id()
+                    && commit.is_empty(&*repo).unwrap_or_default()
+            }
         }
     }
 
