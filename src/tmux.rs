@@ -1,9 +1,4 @@
-use std::{
-    env,
-    os::unix::process::CommandExt,
-    path::Path,
-    process::{self, Stdio},
-};
+use std::{env, os::unix::process::CommandExt, path::Path, process};
 
 use error_stack::ResultExt;
 
@@ -266,20 +261,14 @@ impl Tmux {
             // check only for non prunable worktrees
             .filter(|worktree| !worktree.is_prunable())
             .collect::<Vec<_>>();
+        let mut windows = Vec::new();
         if worktrees.is_empty() {
-            if !repo.is_bare() || !matches!(repo, RepoProvider::Git(_)) {
+            if !repo.is_bare() {
                 return Ok(());
             }
-            let Ok(head) = repo.head_name() else {
-                return Ok(());
-            };
-            // Add the default branch as a tree (usually either main or master)
-            process::Command::new("git")
-                .current_dir(repo.path())
-                .args(["worktree", "add", &head])
-                .stderr(Stdio::inherit())
-                .output()
-                .change_context(TmsError::GitError)?;
+            if let Some((name, path)) = repo.add_worktree(repo.path())? {
+                windows.push((name, path));
+            }
         }
 
         // Moves the inital window to index 0 so it doesn't clash with tmux configs which use
@@ -289,7 +278,6 @@ impl Tmux {
         }
 
         // Puts the main or master branch as the first window
-        let mut windows = Vec::new();
         for tree in worktrees {
             let window_name = tree.name();
             let path = tree.path()?;
