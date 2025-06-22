@@ -28,7 +28,7 @@ pub fn execute_command(command: &str, args: Vec<String>) -> process::Output {
 
 pub fn get_single_selection(
     list: &[String],
-    preview: Preview,
+    preview: Option<Preview>,
     config: &Config,
     tmux: &Tmux,
 ) -> Result<Option<String>> {

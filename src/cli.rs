@@ -328,7 +328,7 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
     }
 
     if let Some(target_session) =
-        get_single_selection(&sessions, Preview::SessionPane, &config, tmux)?
+        get_single_selection(&sessions, Some(Preview::SessionPane), &config, tmux)?
     {
         tmux.switch_client(&target_session.replace('.', "_"));
     }
@@ -347,7 +347,8 @@ fn windows_command(config: &Config, tmux: &Tmux) -> Result<()> {
         .map(|s| s.to_string())
         .collect();
 
-    if let Some(target_window) = get_single_selection(&windows, Preview::WindowPane, config, tmux)?
+    if let Some(target_window) =
+        get_single_selection(&windows, Some(Preview::WindowPane), config, tmux)?
     {
         if let Some((windex, _)) = target_window.split_once(' ') {
             tmux.select_window(windex);
@@ -682,7 +683,7 @@ fn pick_search_path(config: &Config, tmux: &Tmux) -> Result<Option<PathBuf>> {
         .collect::<Vec<String>>();
 
     let path = if search_dirs.len() > 1 {
-        get_single_selection(&search_dirs, Preview::Directory, config, tmux)?
+        get_single_selection(&search_dirs, Some(Preview::Directory), config, tmux)?
     } else {
         let first = search_dirs
             .first()

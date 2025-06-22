@@ -8,7 +8,6 @@ use tms::{
     cli::{Cli, SubCommandGiven},
     error::{Result, Suggestion},
     get_single_selection,
-    picker::Preview,
     session::{create_sessions, SessionContainer},
     tmux::Tmux,
 };
@@ -50,7 +49,7 @@ fn main() -> Result<()> {
     let session_strings = sessions.list();
 
     let selected_str =
-        if let Some(str) = get_single_selection(&session_strings, Preview::None, &config, &tmux)? {
+        if let Some(str) = get_single_selection(&session_strings, None, &config, &tmux)? {
             str
         } else {
             return Ok(());

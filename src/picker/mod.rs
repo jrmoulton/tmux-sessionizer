@@ -29,13 +29,12 @@ use crate::{
 pub enum Preview {
     SessionPane,
     WindowPane,
-    None,
     Directory,
 }
 
 pub struct Picker<'a> {
     matcher: Nucleo<String>,
-    preview: Preview,
+    preview: Option<Preview>,
 
     colors: Option<&'a PickerColorConfig>,
 
@@ -47,7 +46,12 @@ pub struct Picker<'a> {
 }
 
 impl<'a> Picker<'a> {
-    pub fn new(list: &[String], preview: Preview, keymap: Option<&Keymap>, tmux: &'a Tmux) -> Self {
+    pub fn new(
+        list: &[String],
+        preview: Option<Preview>,
+        keymap: Option<&Keymap>,
+        tmux: &'a Tmux,
+    ) -> Self {
         let matcher = Nucleo::new(nucleo::Config::DEFAULT, Arc::new(request_redraw), None, 1);
 
         let injector = matcher.injector();
@@ -152,7 +156,7 @@ impl<'a> Picker<'a> {
         let preview_pane;
         let area = f.area();
 
-        let preview_split = if !matches!(self.preview, Preview::None) {
+        let preview_split = if self.preview.is_some() {
             preview_direction = if area.width.div_ceil(2) >= area.height {
                 picker_pane = 0;
                 preview_pane = 1;
@@ -223,7 +227,7 @@ impl<'a> Picker<'a> {
             y: layout[1].y,
         });
 
-        if !matches!(self.preview, Preview::None) {
+        if self.preview.is_some() {
             let preview = PreviewWidget::new(
                 self.get_preview_text(),
                 colors.border_color(),
@@ -236,20 +240,20 @@ impl<'a> Picker<'a> {
     fn get_preview_text(&self) -> String {
         if let Some(item_data) = self.get_selected() {
             let output = match self.preview {
-                Preview::SessionPane => self.tmux.capture_pane(item_data),
-                Preview::WindowPane => self.tmux.capture_pane(
+                Some(Preview::SessionPane) => self.tmux.capture_pane(item_data),
+                Some(Preview::WindowPane) => self.tmux.capture_pane(
                     item_data
                         .split_once(' ')
                         .map(|val| val.0)
                         .unwrap_or_default(),
                 ),
-                Preview::Directory => process::Command::new("ls")
+                Some(Preview::Directory) => process::Command::new("ls")
                     .args(["-1", item_data])
                     .output()
                     .unwrap_or_else(|_| {
                         panic!("Failed to execute the command for directory: {}", item_data)
                     }),
-                Preview::None => panic!("preview rendering should not have occured"),
+                None => panic!("preview rendering should not have occured"),
             };
 
             if output.status.success() {
