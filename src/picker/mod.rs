@@ -1,24 +1,14 @@
 mod preview;
 
-use std::{
-    io::{self, Stdout},
-    process,
-    rc::Rc,
-    sync::Arc,
-};
+use std::{process, rc::Rc, sync::Arc};
 
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use nucleo::{
     pattern::{CaseMatching, Normalization},
     Nucleo,
 };
 use preview::PreviewWidget;
 use ratatui::{
-    backend::CrosstermBackend,
     layout::{self, Constraint, Direction, Layout},
     style::Style,
     text::{Line, Span},
@@ -26,7 +16,7 @@ use ratatui::{
         block::Position, Block, Borders, HighlightSpacing, List, ListDirection, ListItem,
         ListState, Paragraph,
     },
-    Frame, Terminal,
+    DefaultTerminal, Frame,
 };
 
 use crate::{
@@ -91,30 +81,18 @@ impl<'a> Picker<'a> {
     }
 
     pub fn run(&mut self) -> Result<Option<String>> {
-        enable_raw_mode().map_err(|e| TmsError::TuiError(e.to_string()))?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen).map_err(|e| TmsError::TuiError(e.to_string()))?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend).map_err(|e| TmsError::TuiError(e.to_string()))?;
+        let mut terminal = ratatui::init();
 
         let selected_str = self
             .main_loop(&mut terminal)
-            .map_err(|e| TmsError::TuiError(e.to_string()))?;
+            .map_err(|e| TmsError::TuiError(e.to_string()));
 
-        disable_raw_mode().map_err(|e| TmsError::TuiError(e.to_string()))?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)
-            .map_err(|e| TmsError::TuiError(e.to_string()))?;
-        terminal
-            .show_cursor()
-            .map_err(|e| TmsError::TuiError(e.to_string()))?;
+        ratatui::restore();
 
-        Ok(selected_str)
+        Ok(selected_str?)
     }
 
-    fn main_loop(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    ) -> Result<Option<String>> {
+    fn main_loop(&mut self, terminal: &mut DefaultTerminal) -> Result<Option<String>> {
         loop {
             self.matcher.tick(10);
             self.update_selection();
