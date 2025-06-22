@@ -5,7 +5,7 @@ use std::{collections::HashMap, env, fmt::Display, fs::canonicalize, io::Write, 
 
 use ratatui::style::{Color, Style, Stylize};
 
-use crate::{error::Suggestion, keymap::Keymap};
+use crate::{error::Suggestion, keymap::Keymap, picker::InputPosition};
 
 type Result<T> = error_stack::Result<T, ConfigError>;
 
@@ -47,6 +47,7 @@ pub struct Config {
     pub search_dirs: Option<Vec<SearchDirectory>>,
     pub sessions: Option<Vec<Session>>,
     pub picker_colors: Option<PickerColorConfig>,
+    pub input_position: Option<InputPosition>,
     pub shortcuts: Option<Keymap>,
     pub bookmarks: Option<Vec<String>>,
     pub session_configs: Option<HashMap<String, SessionConfig>>,

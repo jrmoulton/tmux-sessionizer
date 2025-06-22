@@ -32,8 +32,14 @@ pub fn get_single_selection(
     config: &Config,
     tmux: &Tmux,
 ) -> Result<Option<String>> {
-    let mut picker = Picker::new(list, preview, config.shortcuts.as_ref(), tmux)
-        .set_colors(config.picker_colors.as_ref());
+    let mut picker = Picker::new(
+        list,
+        preview,
+        config.shortcuts.as_ref(),
+        config.input_position.unwrap_or_default(),
+        tmux,
+    )
+    .set_colors(config.picker_colors.as_ref());
 
     picker.run()
 }

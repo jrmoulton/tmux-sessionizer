@@ -18,6 +18,7 @@ use ratatui::{
     },
     DefaultTerminal, Frame,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     configs::PickerColorConfig,
@@ -32,6 +33,13 @@ pub enum Preview {
     Directory,
 }
 
+#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize, Clone, Copy)]
+pub enum InputPosition {
+    Top,
+    #[default]
+    Bottom,
+}
+
 pub struct Picker<'a> {
     matcher: Nucleo<String>,
     preview: Option<Preview>,
@@ -42,6 +50,7 @@ pub struct Picker<'a> {
     filter: String,
     cursor_pos: u16,
     keymap: Keymap,
+    input_position: InputPosition,
     tmux: &'a Tmux,
 }
 
@@ -50,6 +59,7 @@ impl<'a> Picker<'a> {
         list: &[String],
         preview: Option<Preview>,
         keymap: Option<&Keymap>,
+        input_position: InputPosition,
         tmux: &'a Tmux,
     ) -> Self {
         let matcher = Nucleo::new(nucleo::Config::DEFAULT, Arc::new(request_redraw), None, 1);
@@ -74,6 +84,7 @@ impl<'a> Picker<'a> {
             filter: String::default(),
             cursor_pos: 0,
             keymap,
+            input_position,
             tmux,
         }
     }
@@ -155,6 +166,7 @@ impl<'a> Picker<'a> {
         let picker_pane;
         let preview_pane;
         let area = f.area();
+        let mut input_position = self.input_position;
 
         let preview_split = if self.preview.is_some() {
             preview_direction = if area.width.div_ceil(2) >= area.height {
@@ -164,6 +176,7 @@ impl<'a> Picker<'a> {
             } else {
                 picker_pane = 1;
                 preview_pane = 0;
+                input_position = InputPosition::Bottom;
                 Direction::Vertical
             };
             Layout::new(
@@ -178,14 +191,35 @@ impl<'a> Picker<'a> {
             Rc::new([area])
         };
 
-        let layout = Layout::new(
-            Direction::Vertical,
-            [
-                Constraint::Length(preview_split[picker_pane].height - 1),
-                Constraint::Length(1),
-            ],
-        )
-        .split(preview_split[picker_pane]);
+        let top_constraint;
+        let bottom_constraint;
+        let list_direction;
+        let input_index;
+        let list_index;
+        let borders;
+        let title_position;
+        match input_position {
+            InputPosition::Top => {
+                top_constraint = Constraint::Length(1);
+                bottom_constraint = Constraint::Length(preview_split[picker_pane].height - 1);
+                list_direction = ListDirection::TopToBottom;
+                input_index = 0;
+                list_index = 1;
+                borders = Borders::TOP;
+                title_position = Position::Top;
+            }
+            InputPosition::Bottom => {
+                top_constraint = Constraint::Length(preview_split[picker_pane].height - 1);
+                bottom_constraint = Constraint::Length(1);
+                list_direction = ListDirection::BottomToTop;
+                input_index = 1;
+                list_index = 0;
+                borders = Borders::BOTTOM;
+                title_position = Position::Bottom;
+            }
+        }
+        let layout = Layout::new(Direction::Vertical, [top_constraint, bottom_constraint])
+            .split(preview_split[picker_pane]);
 
         let snapshot = self.matcher.snapshot();
         let matches = snapshot
@@ -200,31 +234,31 @@ impl<'a> Picker<'a> {
 
         let table = List::new(matches)
             .highlight_style(colors.highlight_style())
-            .direction(ListDirection::BottomToTop)
+            .direction(list_direction)
             .highlight_spacing(HighlightSpacing::Always)
             .highlight_symbol("> ")
             .block(
                 Block::default()
-                    .borders(Borders::BOTTOM)
+                    .borders(borders)
                     .border_style(Style::default().fg(colors.border_color()))
                     .title_style(Style::default().fg(colors.info_color()))
-                    .title_position(Position::Bottom)
+                    .title_position(title_position)
                     .title(format!(
                         "{}/{}",
                         snapshot.matched_item_count(),
                         snapshot.item_count()
                     )),
             );
-        f.render_stateful_widget(table, layout[0], &mut self.selection);
+        f.render_stateful_widget(table, layout[list_index], &mut self.selection);
 
         let prompt = Span::styled("> ", Style::default().fg(colors.prompt_color()));
         let input_text = Span::raw(&self.filter);
         let input_line = Line::from(vec![prompt, input_text]);
         let input = Paragraph::new(vec![input_line]);
-        f.render_widget(input, layout[1]);
+        f.render_widget(input, layout[input_index]);
         f.set_cursor_position(layout::Position {
-            x: layout[1].x + self.cursor_pos + 2,
-            y: layout[1].y,
+            x: layout[input_index].x + self.cursor_pos + 2,
+            y: layout[input_index].y,
         });
 
         if self.preview.is_some() {
@@ -279,6 +313,22 @@ impl<'a> Picker<'a> {
     }
 
     fn move_up(&mut self) {
+        if self.input_position == InputPosition::Bottom {
+            self.do_move_up()
+        } else {
+            self.do_move_down()
+        }
+    }
+
+    fn move_down(&mut self) {
+        if self.input_position == InputPosition::Bottom {
+            self.do_move_down()
+        } else {
+            self.do_move_up()
+        }
+    }
+
+    fn do_move_up(&mut self) {
         let item_count = self.matcher.snapshot().matched_item_count() as usize;
         if item_count == 0 {
             return;
@@ -293,7 +343,7 @@ impl<'a> Picker<'a> {
         }
     }
 
-    fn move_down(&mut self) {
+    fn do_move_down(&mut self) {
         match self.selection.selected() {
             Some(0) => {
                 let item_count = self.matcher.snapshot().matched_item_count() as usize;
