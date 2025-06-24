@@ -28,12 +28,18 @@ pub fn execute_command(command: &str, args: Vec<String>) -> process::Output {
 
 pub fn get_single_selection(
     list: &[String],
-    preview: Preview,
+    preview: Option<Preview>,
     config: &Config,
     tmux: &Tmux,
 ) -> Result<Option<String>> {
-    let mut picker = Picker::new(list, preview, config.shortcuts.as_ref(), tmux)
-        .set_colors(config.picker_colors.as_ref());
+    let mut picker = Picker::new(
+        list,
+        preview,
+        config.shortcuts.as_ref(),
+        config.input_position.unwrap_or_default(),
+        tmux,
+    )
+    .set_colors(config.picker_colors.as_ref());
 
     picker.run()
 }

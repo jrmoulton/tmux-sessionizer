@@ -1,31 +1,24 @@
-use std::{
-    io::{self, Stdout},
-    process,
-    rc::Rc,
-    sync::Arc,
-};
+mod preview;
 
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
-    execute,
-    style::Colored,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use std::{process, rc::Rc, sync::Arc};
+
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use nucleo::{
     pattern::{CaseMatching, Normalization},
     Nucleo,
 };
+use preview::PreviewWidget;
 use ratatui::{
-    backend::CrosstermBackend,
-    layout::{self, Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
-    text::{Line, Span, Text},
+    layout::{self, Constraint, Direction, Layout},
+    style::Style,
+    text::{Line, Span},
     widgets::{
         block::Position, Block, Borders, HighlightSpacing, List, ListDirection, ListItem,
-        ListState, Paragraph, Wrap,
+        ListState, Paragraph,
     },
-    Frame, Terminal,
+    DefaultTerminal, Frame,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     configs::PickerColorConfig,
@@ -37,13 +30,19 @@ use crate::{
 pub enum Preview {
     SessionPane,
     WindowPane,
-    None,
     Directory,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize, Clone, Copy)]
+pub enum InputPosition {
+    Top,
+    #[default]
+    Bottom,
 }
 
 pub struct Picker<'a> {
     matcher: Nucleo<String>,
-    preview: Preview,
+    preview: Option<Preview>,
 
     colors: Option<&'a PickerColorConfig>,
 
@@ -51,11 +50,18 @@ pub struct Picker<'a> {
     filter: String,
     cursor_pos: u16,
     keymap: Keymap,
+    input_position: InputPosition,
     tmux: &'a Tmux,
 }
 
 impl<'a> Picker<'a> {
-    pub fn new(list: &[String], preview: Preview, keymap: Option<&Keymap>, tmux: &'a Tmux) -> Self {
+    pub fn new(
+        list: &[String],
+        preview: Option<Preview>,
+        keymap: Option<&Keymap>,
+        input_position: InputPosition,
+        tmux: &'a Tmux,
+    ) -> Self {
         let matcher = Nucleo::new(nucleo::Config::DEFAULT, Arc::new(request_redraw), None, 1);
 
         let injector = matcher.injector();
@@ -78,6 +84,7 @@ impl<'a> Picker<'a> {
             filter: String::default(),
             cursor_pos: 0,
             keymap,
+            input_position,
             tmux,
         }
     }
@@ -89,30 +96,18 @@ impl<'a> Picker<'a> {
     }
 
     pub fn run(&mut self) -> Result<Option<String>> {
-        enable_raw_mode().map_err(|e| TmsError::TuiError(e.to_string()))?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen).map_err(|e| TmsError::TuiError(e.to_string()))?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend).map_err(|e| TmsError::TuiError(e.to_string()))?;
+        let mut terminal = ratatui::init();
 
         let selected_str = self
             .main_loop(&mut terminal)
-            .map_err(|e| TmsError::TuiError(e.to_string()))?;
+            .map_err(|e| TmsError::TuiError(e.to_string()));
 
-        disable_raw_mode().map_err(|e| TmsError::TuiError(e.to_string()))?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)
-            .map_err(|e| TmsError::TuiError(e.to_string()))?;
-        terminal
-            .show_cursor()
-            .map_err(|e| TmsError::TuiError(e.to_string()))?;
+        ratatui::restore();
 
-        Ok(selected_str)
+        Ok(selected_str?)
     }
 
-    fn main_loop(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    ) -> Result<Option<String>> {
+    fn main_loop(&mut self, terminal: &mut DefaultTerminal) -> Result<Option<String>> {
         loop {
             self.matcher.tick(10);
             self.update_selection();
@@ -170,37 +165,61 @@ impl<'a> Picker<'a> {
         let preview_direction;
         let picker_pane;
         let preview_pane;
+        let area = f.area();
+        let mut input_position = self.input_position;
 
-        let preview_split = if !matches!(self.preview, Preview::None) {
-            preview_direction = if f.area().width.div_ceil(2) >= f.area().height {
+        let preview_split = if self.preview.is_some() {
+            preview_direction = if area.width.div_ceil(2) >= area.height {
                 picker_pane = 0;
                 preview_pane = 1;
                 Direction::Horizontal
             } else {
                 picker_pane = 1;
                 preview_pane = 0;
+                input_position = InputPosition::Bottom;
                 Direction::Vertical
             };
             Layout::new(
                 preview_direction,
                 [Constraint::Percentage(50), Constraint::Percentage(50)],
             )
-            .split(f.area())
+            .split(area)
         } else {
             picker_pane = 0;
             preview_pane = 1;
             preview_direction = Direction::Horizontal;
-            Rc::new([f.area()])
+            Rc::new([area])
         };
 
-        let layout = Layout::new(
-            Direction::Vertical,
-            [
-                Constraint::Length(preview_split[picker_pane].height - 1),
-                Constraint::Length(1),
-            ],
-        )
-        .split(preview_split[picker_pane]);
+        let top_constraint;
+        let bottom_constraint;
+        let list_direction;
+        let input_index;
+        let list_index;
+        let borders;
+        let title_position;
+        match input_position {
+            InputPosition::Top => {
+                top_constraint = Constraint::Length(1);
+                bottom_constraint = Constraint::Length(preview_split[picker_pane].height - 1);
+                list_direction = ListDirection::TopToBottom;
+                input_index = 0;
+                list_index = 1;
+                borders = Borders::TOP;
+                title_position = Position::Top;
+            }
+            InputPosition::Bottom => {
+                top_constraint = Constraint::Length(preview_split[picker_pane].height - 1);
+                bottom_constraint = Constraint::Length(1);
+                list_direction = ListDirection::BottomToTop;
+                input_index = 1;
+                list_index = 0;
+                borders = Borders::BOTTOM;
+                title_position = Position::Bottom;
+            }
+        }
+        let layout = Layout::new(Direction::Vertical, [top_constraint, bottom_constraint])
+            .split(preview_split[picker_pane]);
 
         let snapshot = self.matcher.snapshot();
         let matches = snapshot
@@ -215,90 +234,70 @@ impl<'a> Picker<'a> {
 
         let table = List::new(matches)
             .highlight_style(colors.highlight_style())
-            .direction(ListDirection::BottomToTop)
+            .direction(list_direction)
             .highlight_spacing(HighlightSpacing::Always)
             .highlight_symbol("> ")
             .block(
                 Block::default()
-                    .borders(Borders::BOTTOM)
+                    .borders(borders)
                     .border_style(Style::default().fg(colors.border_color()))
                     .title_style(Style::default().fg(colors.info_color()))
-                    .title_position(Position::Bottom)
+                    .title_position(title_position)
                     .title(format!(
                         "{}/{}",
                         snapshot.matched_item_count(),
                         snapshot.item_count()
                     )),
             );
-        f.render_stateful_widget(table, layout[0], &mut self.selection);
+        f.render_stateful_widget(table, layout[list_index], &mut self.selection);
 
         let prompt = Span::styled("> ", Style::default().fg(colors.prompt_color()));
         let input_text = Span::raw(&self.filter);
         let input_line = Line::from(vec![prompt, input_text]);
         let input = Paragraph::new(vec![input_line]);
-        f.render_widget(input, layout[1]);
+        f.render_widget(input, layout[input_index]);
         f.set_cursor_position(layout::Position {
-            x: layout[1].x + self.cursor_pos + 2,
-            y: layout[1].y,
+            x: layout[input_index].x + self.cursor_pos + 2,
+            y: layout[input_index].y,
         });
 
-        if !matches!(self.preview, Preview::None) {
-            self.render_preview(
-                f,
-                &colors.border_color(),
-                &preview_direction,
-                preview_split[preview_pane],
+        if self.preview.is_some() {
+            let preview = PreviewWidget::new(
+                self.get_preview_text(),
+                colors.border_color(),
+                preview_direction,
             );
+            f.render_widget(preview, preview_split[preview_pane]);
         }
     }
 
-    fn render_preview(
-        &self,
-        f: &mut Frame,
-        border_color: &Color,
-        direction: &Direction,
-        rect: Rect,
-    ) {
-        let text = if let Some(item_data) = self.get_selected() {
+    fn get_preview_text(&self) -> String {
+        if let Some(item_data) = self.get_selected() {
             let output = match self.preview {
-                Preview::SessionPane => self.tmux.capture_pane(item_data),
-                Preview::WindowPane => self.tmux.capture_pane(
+                Some(Preview::SessionPane) => self.tmux.capture_pane(item_data),
+                Some(Preview::WindowPane) => self.tmux.capture_pane(
                     item_data
                         .split_once(' ')
                         .map(|val| val.0)
                         .unwrap_or_default(),
                 ),
-                Preview::Directory => process::Command::new("ls")
+                Some(Preview::Directory) => process::Command::new("ls")
                     .args(["-1", item_data])
                     .output()
                     .unwrap_or_else(|_| {
                         panic!("Failed to execute the command for directory: {}", item_data)
                     }),
-                Preview::None => panic!("preview rendering should not have occured"),
+                None => panic!("preview rendering should not have occured"),
             };
 
             if output.status.success() {
                 String::from_utf8(output.stdout).unwrap()
             } else {
-                "".to_string()
+                String::default()
             }
         } else {
-            "".to_string()
-        };
-        let text = str_to_text(&text, (rect.width - 1).into());
-        let border_position = if *direction == Direction::Horizontal {
-            Borders::LEFT
-        } else {
-            Borders::BOTTOM
-        };
-        let preview = Paragraph::new(text)
-            .block(
-                Block::default()
-                    .borders(border_position)
-                    .border_style(Style::default().fg(*border_color)),
-            )
-            .wrap(Wrap { trim: false });
-        f.render_widget(preview, rect);
+            String::default()
+        }
     }
 
     fn get_selected(&self) -> Option<&String> {
@@ -314,6 +313,22 @@ impl<'a> Picker<'a> {
     }
 
     fn move_up(&mut self) {
+        if self.input_position == InputPosition::Bottom {
+            self.do_move_up()
+        } else {
+            self.do_move_down()
+        }
+    }
+
+    fn move_down(&mut self) {
+        if self.input_position == InputPosition::Bottom {
+            self.do_move_down()
+        } else {
+            self.do_move_up()
+        }
+    }
+
+    fn do_move_up(&mut self) {
         let item_count = self.matcher.snapshot().matched_item_count() as usize;
         if item_count == 0 {
             return;
@@ -328,7 +343,7 @@ impl<'a> Picker<'a> {
         }
     }
 
-    fn move_down(&mut self) {
+    fn do_move_down(&mut self) {
         match self.selection.selected() {
             Some(0) => {
                 let item_count = self.matcher.snapshot().matched_item_count() as usize;
@@ -457,115 +472,3 @@ impl<'a> Picker<'a> {
 }
 
 fn request_redraw() {}
-
-fn str_to_text(s: &str, max: usize) -> Text {
-    let mut text = Text::default();
-    let mut style = Style::default();
-    let mut tspan = String::new();
-    let mut ansi_state;
-
-    for l in s.lines() {
-        let mut line = Line::default();
-        ansi_state = false;
-
-        for (i, ch) in l.chars().enumerate() {
-            if !ansi_state {
-                if ch == '\x1b' && l.chars().nth(i + 1) == Some('[') {
-                    if !tspan.is_empty() {
-                        let span = Span::styled(tspan.clone(), style);
-                        line.spans.push(span);
-                    }
-
-                    tspan.clear();
-                    ansi_state = true;
-                } else {
-                    tspan.push(ch);
-
-                    if (line.width() + tspan.chars().count()) == max || i == (l.chars().count() - 1)
-                    {
-                        let span = Span::styled(tspan.clone(), style);
-                        line.spans.push(span);
-                        tspan.clear();
-                        break;
-                    }
-                }
-            } else {
-                match ch {
-                    '[' => {}
-                    'm' => {
-                        style = match tspan.as_str() {
-                            "" => style.reset(),
-                            "0" => style.reset(),
-                            "1" => style.bold(),
-                            "3" => style.italic(),
-                            "4" => style.underlined(),
-                            "5" => style.rapid_blink(),
-                            "6" => style.slow_blink(),
-                            "7" => style.reversed(),
-                            "9" => style.crossed_out(),
-                            "22" => style.not_bold(),
-                            "23" => style.not_italic(),
-                            "24" => style.not_underlined(),
-                            "25" => style.not_rapid_blink().not_slow_blink(),
-                            "27" => style.not_reversed(),
-                            "29" => style.not_crossed_out(),
-                            "30" => style.fg(Color::Black),
-                            "31" => style.fg(Color::Red),
-                            "32" => style.fg(Color::Green),
-                            "33" => style.fg(Color::Yellow),
-                            "34" => style.fg(Color::Blue),
-                            "35" => style.fg(Color::Magenta),
-                            "36" => style.fg(Color::Cyan),
-                            "37" => style.fg(Color::Gray),
-                            "40" => style.bg(Color::Black),
-                            "41" => style.bg(Color::Red),
-                            "42" => style.bg(Color::Green),
-                            "43" => style.bg(Color::Yellow),
-                            "44" => style.bg(Color::Blue),
-                            "45" => style.bg(Color::Magenta),
-                            "46" => style.bg(Color::Cyan),
-                            "47" => style.bg(Color::Gray),
-                            "90" => style.fg(Color::DarkGray),
-                            "91" => style.fg(Color::LightRed),
-                            "92" => style.fg(Color::LightGreen),
-                            "93" => style.fg(Color::LightYellow),
-                            "94" => style.fg(Color::LightBlue),
-                            "95" => style.fg(Color::LightMagenta),
-                            "96" => style.fg(Color::LightCyan),
-                            "97" => style.fg(Color::White),
-                            "100" => style.bg(Color::DarkGray),
-                            "101" => style.bg(Color::LightRed),
-                            "102" => style.bg(Color::LightGreen),
-                            "103" => style.bg(Color::LightYellow),
-                            "104" => style.bg(Color::LightBlue),
-                            "105" => style.bg(Color::LightMagenta),
-                            "106" => style.bg(Color::LightCyan),
-                            "107" => style.bg(Color::White),
-                            code => {
-                                if let Some(colored) = Colored::parse_ansi(code) {
-                                    match colored {
-                                        Colored::ForegroundColor(c) => style.fg(c.into()),
-                                        Colored::BackgroundColor(c) => style.bg(c.into()),
-                                        Colored::UnderlineColor(c) => {
-                                            style.underline_color(c.into())
-                                        }
-                                    }
-                                } else {
-                                    style
-                                }
-                            }
-                        };
-
-                        tspan.clear();
-                        ansi_state = false;
-                    }
-                    _ => tspan.push(ch),
-                }
-            }
-        }
-
-        text.lines.push(line);
-    }
-
-    text
-}
