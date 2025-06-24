@@ -13,6 +13,7 @@ use std::{
     collections::{HashMap, VecDeque},
     fs::{self},
     path::{Path, PathBuf},
+    process::{self, Stdio},
 };
 
 use crate::{
@@ -175,7 +176,57 @@ impl RepoProvider {
     pub fn is_bare(&self) -> bool {
         match self {
             RepoProvider::Git(repo) => repo.is_bare(),
-            RepoProvider::Jujutsu(_) => false,
+            RepoProvider::Jujutsu(workspace) => {
+                let loader = workspace.repo_loader();
+                let store = loader.store();
+                let Ok(repo) = loader.load_at_head() else {
+                    return false;
+                };
+                // currently checked out commit, get from current (default) workspace
+                let Some(commit_id) = repo.view().wc_commit_ids().get(workspace.workspace_name())
+                else {
+                    return false;
+                };
+                let Ok(commit) = store.get_commit(commit_id) else {
+                    return false;
+                };
+                // if parent is root commit then it's the only possible parent
+                let Some(Ok(parent)) = commit.parents().next() else {
+                    return false;
+                };
+
+                // root commit is direct parent of current commit => repo is effectively bare
+                // current commit should be empty
+                parent.change_id() == store.root_commit().change_id()
+                    && commit.is_empty(&*repo).unwrap_or_default()
+            }
+        }
+    }
+
+    pub fn add_worktree(&self, path: &Path) -> Result<Option<(String, PathBuf)>> {
+        match self {
+            RepoProvider::Git(_) => {
+                let Ok(head) = self.head_name() else {
+                    return Ok(None);
+                };
+                // Add the default branch as a tree (usually either main or master)
+                process::Command::new("git")
+                    .current_dir(path)
+                    .args(["worktree", "add", &head])
+                    .stderr(Stdio::inherit())
+                    .output()
+                    .change_context(TmsError::GitError)?;
+                Ok(Some((head.clone(), path.to_path_buf().join(&head))))
+            }
+            RepoProvider::Jujutsu(_) => {
+                process::Command::new("jj")
+                    .current_dir(path)
+                    .args(["workspace", "add", "-r", "trunk()", "trunk"])
+                    .stderr(Stdio::inherit())
+                    .output()
+                    .change_context(TmsError::GitError)?;
+                Ok(Some(("trunk".into(), path.to_path_buf().join("trunk"))))
+            }
         }
     }
 
@@ -203,6 +254,23 @@ impl RepoProvider {
                     }
                     Ok(())
                 })?;
+
+                if self.is_bare() {
+                    if let Ok(read_dir) = fs::read_dir(self.path()) {
+                        let mut sub = read_dir
+                            .filter_map(|entry| entry.ok())
+                            .map(|dir| dir.path())
+                            .filter(|path| path.is_dir())
+                            .filter_map(|path| RepoProvider::open(&path, config).ok())
+                            .filter(|repo| matches!(repo, RepoProvider::Jujutsu(_)))
+                            .filter(|repo| {
+                                repo.main_repo()
+                                    .is_some_and(|main| main == self.path().join(".jj/repo"))
+                            })
+                            .collect::<Vec<_>>();
+                        repos.append(&mut sub);
+                    }
+                }
 
                 let repos = repos
                     .into_iter()
