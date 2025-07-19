@@ -14,9 +14,10 @@ use std::process;
 
 use crate::{
     error::{Result, TmsError},
-    picker::{Picker, Preview},
+    picker::{Picker, PickerItem, Preview},
     tmux::Tmux,
 };
+use std::collections::HashSet;
 
 pub fn execute_command(command: &str, args: Vec<String>) -> process::Output {
     process::Command::new(command)
@@ -27,13 +28,15 @@ pub fn execute_command(command: &str, args: Vec<String>) -> process::Output {
 }
 
 pub fn get_single_selection(
-    list: &[String],
+    list: Vec<PickerItem>,
+    running_sessions: HashSet<String>,
     preview: Option<Preview>,
     config: &Config,
     tmux: &Tmux,
-) -> Result<Option<String>> {
+) -> Result<Option<PickerItem>> {
     let mut picker = Picker::new(
         list,
+        running_sessions,
         preview,
         config.shortcuts.as_ref(),
         config.input_position.unwrap_or_default(),

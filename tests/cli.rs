@@ -48,6 +48,7 @@ fn tms_config() -> anyhow::Result<()> {
         recursive_submodules: Some(false),
         switch_filter_unknown: Some(false),
         search_non_git_dirs: Some(false),
+        search_tmux_sessions: Some(true),
         session_sort_order: Some(SessionSortOrderConfig::Alphabetical),
         excluded_dirs: Some(vec![excluded_dir.clone()]),
         search_paths: None,
@@ -93,6 +94,8 @@ fn tms_config() -> anyhow::Result<()> {
             "false",
             "--search-non-git-dirs",
             "false",
+            "--search-tmux-sessions",
+            "true",
             "--session-sort-order",
             "Alphabetical",
             "--excluded",
@@ -151,7 +154,7 @@ fn tms_list_dirs_without_non_git_dirs() -> anyhow::Result<()> {
 
     let mut tms = Command::cargo_bin("tms")?;
     tms.env("TMS_CONFIG_FILE", &config_file_path);
-    tms.arg("--just-print"); // a fake argument to just print the list and not launch fzf
+    tms.arg("--just-print");
     let output = tms.assert().success().get_output().stdout.clone();
     let output = String::from_utf8(output)?;
 
@@ -189,7 +192,7 @@ fn tms_list_dirs_with_non_git_dirs() -> anyhow::Result<()> {
 
     let mut tms = Command::cargo_bin("tms")?;
     tms.env("TMS_CONFIG_FILE", &config_file_path);
-    tms.arg("--just-print"); // a fake argument to just print the list and not launch fzf
+    tms.arg("--just-print");
     let output = tms.assert().success().get_output().stdout.clone();
     let output = String::from_utf8(output)?;
 

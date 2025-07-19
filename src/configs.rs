@@ -42,6 +42,7 @@ pub struct Config {
     pub recursive_submodules: Option<bool>,
     pub switch_filter_unknown: Option<bool>,
     pub search_non_git_dirs: Option<bool>,
+    pub search_tmux_sessions: Option<bool>,
     pub session_sort_order: Option<SessionSortOrderConfig>,
     pub excluded_dirs: Option<Vec<String>>,
     pub search_paths: Option<Vec<String>>, // old format, deprecated
@@ -75,6 +76,7 @@ pub struct ConfigExport {
     pub recursive_submodules: bool,
     pub switch_filter_unknown: bool,
     pub search_non_git_dirs: bool,
+    pub search_tmux_sessions: bool,
     pub session_sort_order: SessionSortOrderConfig,
     pub excluded_dirs: Vec<String>,
     pub search_dirs: Vec<SearchDirectory>,
@@ -97,6 +99,7 @@ impl From<Config> for ConfigExport {
             recursive_submodules: value.recursive_submodules.unwrap_or_default(),
             switch_filter_unknown: value.switch_filter_unknown.unwrap_or_default(),
             search_non_git_dirs: value.search_non_git_dirs.unwrap_or_default(),
+            search_tmux_sessions: value.search_tmux_sessions.unwrap_or(true),
             session_sort_order: value.session_sort_order.unwrap_or_default(),
             excluded_dirs: value.excluded_dirs.unwrap_or_default(),
             search_dirs: value.search_dirs.unwrap_or_default(),

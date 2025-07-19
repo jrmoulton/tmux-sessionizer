@@ -13,14 +13,12 @@ use crate::{
     dirty_paths::DirtyUtf8Path,
     execute_command, get_single_selection,
     marks::{marks_command, MarksCommand},
-    picker::Preview,
+    picker::{PickerItem, Preview},
     repos::RepoProvider,
-    session::{create_sessions, SessionContainer},
     tmux::Tmux,
     Result, TmsError,
 };
 use clap::{Args, Parser, Subcommand};
-use clap_complete::{ArgValueCandidates, CompletionCandidate};
 use error_stack::ResultExt;
 use ratatui::style::Color;
 
@@ -66,8 +64,6 @@ pub enum CliCommand {
     InitRepo(InitRepoCommand),
     /// Bookmark a directory so it is available to select along with the Git repositories
     Bookmark(BookmarkCommand),
-    /// Open a session
-    OpenSession(OpenSessionCommand),
     /// Manage list of sessions that can be instantly accessed by their index
     Marks(MarksCommand),
 }
@@ -123,6 +119,9 @@ pub struct ConfigArgs {
     #[arg(long, value_name = "true | false")]
     /// Also search for non-git directories
     search_non_git_dirs: Option<bool>,
+    #[arg(long, value_name = "true | false")]
+    /// Also search for running tmux sessions
+    search_tmux_sessions: Option<bool>,
     #[arg(long, short = 'd', value_name = "max depth", num_args = 1..)]
     /// The maximum depth to traverse when searching for repositories in search paths, length
     /// should match the number of search paths if specified (defaults to 10)
@@ -187,13 +186,6 @@ pub struct BookmarkCommand {
     path: Option<String>,
 }
 
-#[derive(Debug, Args)]
-pub struct OpenSessionCommand {
-    #[arg(add = ArgValueCandidates::new(open_session_completion_candidates))]
-    /// Name of the session to open.
-    session: Box<str>,
-}
-
 impl Cli {
     pub fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven> {
         // Get the configuration from the config file
@@ -206,9 +198,10 @@ impl Cli {
         }
 
         if self.just_print {
-            let sessions = create_sessions(&config)?;
-            for session in sessions.list() {
-                println!("{}", session);
+            let picker_items = crate::repos::get_picker_items(&config, tmux)?;
+            let running_sessions = tmux.get_running_sessions()?;
+            for item in picker_items {
+                println!("{}", item.display_name(&running_sessions));
             }
             return Ok(SubCommandGiven::Yes);
         }
@@ -270,11 +263,6 @@ impl Cli {
 
             Some(CliCommand::Bookmark(args)) => {
                 bookmark_command(args, config)?;
-                Ok(SubCommandGiven::Yes)
-            }
-
-            Some(CliCommand::OpenSession(args)) => {
-                open_session_command(args, config, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
@@ -342,20 +330,18 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
         sessions.sort_by(|a, b| b.1.cmp(a.1));
     }
 
-    let mut sessions: Vec<String> = sessions.into_iter().map(|s| s.0.to_string()).collect();
-    if let Some(true) = config.switch_filter_unknown {
-        let configured = create_sessions(&config)?;
+    let sessions: Vec<String> = sessions.into_iter().map(|s| s.0.to_string()).collect();
 
-        sessions = sessions
-            .into_iter()
-            .filter(|session| configured.find_session(session).is_some())
-            .collect::<Vec<String>>();
-    }
+    let picker_items = sessions
+        .into_iter()
+        .map(PickerItem::TmuxSession)
+        .collect();
 
+    let running_sessions = tmux.get_running_sessions()?;
     if let Some(target_session) =
-        get_single_selection(&sessions, Some(Preview::SessionPane), &config, tmux)?
+        get_single_selection(picker_items, running_sessions.clone(), Some(Preview::SessionPane), &config, tmux)?
     {
-        tmux.switch_client(&target_session.replace('.', "_"));
+        tmux.switch_client(target_session.display_name(&running_sessions).replace('.', "_").as_str());
     }
 
     Ok(())
@@ -364,18 +350,19 @@ fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
 fn windows_command(config: &Config, tmux: &Tmux) -> Result<()> {
     let windows = tmux.list_windows("'#{?window_attached,,#{window_id} #{window_name}}'", None);
 
-    let windows: Vec<String> = windows
+    let windows: Vec<PickerItem> = windows
         .replace('\'', "")
         .replace("\n\n", "\n")
         .trim()
         .split('\n')
-        .map(|s| s.to_string())
+        .map(|s| PickerItem::TmuxSession(s.to_string()))
         .collect();
 
+    let running_sessions = tmux.get_running_sessions()?;
     if let Some(target_window) =
-        get_single_selection(&windows, Some(Preview::WindowPane), config, tmux)?
+        get_single_selection(windows, running_sessions.clone(), Some(Preview::WindowPane), config, tmux)?
     {
-        if let Some((windex, _)) = target_window.split_once(' ') {
+        if let Some((windex, _)) = target_window.display_name(&running_sessions).split_once(' ') {
             tmux.select_window(windex);
         }
     }
@@ -403,7 +390,7 @@ fn config_command(cmd: &ConfigCommand, mut config: Config) -> Result<()> {
     config.search_dirs = match &args.search_paths {
         Some(paths) => Some(
             paths
-                .iter()
+                .into_iter()
                 .zip(max_depths.into_iter().chain(std::iter::repeat(10)))
                 .map(|(path, depth)| {
                     let path = if path.ends_with('/') {
@@ -417,12 +404,12 @@ fn config_command(cmd: &ConfigCommand, mut config: Config) -> Result<()> {
                         .map(|val| (val.to_string(), depth))
                         .change_context(TmsError::IoError)
                 })
-                .collect::<Result<Vec<(String, usize)>>>()?
-                .iter()
-                .map(|(path, depth)| {
-                    canonicalize(path)
-                        .map(|val| SearchDirectory::new(val, *depth))
-                        .change_context(TmsError::IoError)
+                .map(|res| {
+                    res.and_then(|(path, depth)| {
+                        canonicalize(path)
+                            .map(|val| SearchDirectory::new(val, depth))
+                            .change_context(TmsError::IoError)
+                    })
                 })
                 .collect::<Result<Vec<SearchDirectory>>>()?,
         ),
@@ -455,6 +442,10 @@ fn config_command(cmd: &ConfigCommand, mut config: Config) -> Result<()> {
 
     if let Some(search_non_git_dirs) = args.search_non_git_dirs {
         config.search_non_git_dirs = Some(search_non_git_dirs.to_owned());
+    }
+
+    if let Some(search_tmux_sessions) = args.search_tmux_sessions {
+        config.search_tmux_sessions = Some(search_tmux_sessions.to_owned());
     }
 
     if let Some(dirs) = &args.excluded_dirs {
@@ -708,12 +699,21 @@ fn pick_search_path(config: &Config, tmux: &Tmux) -> Result<Option<PathBuf>> {
         .attach_printable("No search path configured")?
         .iter()
         .filter(|dir| dir.depth > 0)
-        .map(|dir| dir.path.to_string())
-        .filter_map(|path| path.ok())
-        .collect::<Vec<String>>();
+        .map(|dir| PickerItem::Project {
+            name: dir.path.to_string_lossy().to_string(),
+            path: dir.path.clone(),
+        })
+        .collect::<Vec<PickerItem>>();
 
+    let running_sessions = tmux.get_running_sessions()?;
     let path = if search_dirs.len() > 1 {
-        get_single_selection(&search_dirs, Some(Preview::Directory), config, tmux)?
+        get_single_selection(
+            search_dirs,
+            running_sessions,
+            Some(Preview::Directory),
+            config,
+            tmux,
+        )?
     } else {
         let first = search_dirs
             .first()
@@ -724,7 +724,7 @@ fn pick_search_path(config: &Config, tmux: &Tmux) -> Result<Option<PathBuf>> {
 
     let expanded = path
         .as_ref()
-        .map(|path| shellexpand::full(path).change_context(TmsError::IoError))
+        .map(|path| shellexpand::full(path.name()).change_context(TmsError::IoError))
         .transpose()?
         .map(|path| PathBuf::from(path.as_ref()));
     Ok(expanded)
@@ -738,7 +738,7 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
     let (_, repo_name) = args
         .repository
         .rsplit_once('/')
-        .expect("Repository path contains '/'");
+        .expect("Repository path contains '/' ");
     let repo_name = repo_name.trim_end_matches(".git");
     path.push(repo_name);
 
@@ -841,31 +841,6 @@ fn bookmark_command(args: &BookmarkCommand, mut config: Config) -> Result<()> {
     config.save().change_context(TmsError::ConfigError)?;
 
     Ok(())
-}
-
-fn open_session_command(args: &OpenSessionCommand, config: Config, tmux: &Tmux) -> Result<()> {
-    let sessions = create_sessions(&config)?;
-
-    if let Some(session) = sessions.find_session(&args.session) {
-        session.switch_to(tmux, &config)?;
-        Ok(())
-    } else {
-        Err(TmsError::SessionNotFound(args.session.to_string()).into())
-    }
-}
-
-fn open_session_completion_candidates() -> Vec<CompletionCandidate> {
-    Config::new()
-        .change_context(TmsError::ConfigError)
-        .and_then(|config| create_sessions(&config))
-        .map(|sessions| {
-            sessions
-                .list()
-                .iter()
-                .map(CompletionCandidate::new)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default()
 }
 
 pub enum SubCommandGiven {

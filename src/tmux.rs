@@ -1,4 +1,4 @@
-use std::{env, os::unix::process::CommandExt, path::Path, process};
+use std::{collections::HashSet, env, os::unix::process::CommandExt, path::Path, process};
 
 use error_stack::ResultExt;
 
@@ -74,6 +74,15 @@ impl Tmux {
     pub fn list_sessions(&self, format: &str) -> String {
         let output = self.execute_tmux_command(&["list-sessions", "-F", format]);
         Tmux::stdout_to_string(output)
+    }
+
+    pub fn get_running_sessions(&self) -> Result<HashSet<String>> {
+        let output = self.list_sessions("#S");
+        let sessions = output
+            .lines()
+            .map(|s| s.trim().to_string())
+            .collect::<HashSet<String>>();
+        Ok(sessions)
     }
 
     pub fn current_session(&self, format: &str) -> String {
