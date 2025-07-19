@@ -153,7 +153,7 @@ fn path_to_session(path: &String) -> Result<Session> {
         .file_name()
         .expect("The file name doesn't end in `..`")
         .to_string()?;
-    let session = Session::new(session_name, crate::session::SessionType::Bookmark(path));
+    let session = Session::new(session_name, crate::session::SessionType::Path(path));
     Ok(session)
 }
 
