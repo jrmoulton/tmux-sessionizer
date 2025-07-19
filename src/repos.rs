@@ -10,7 +10,7 @@ use jj_lib::{
     workspace::{WorkingCopyFactories, Workspace},
 };
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs::{self},
     path::{Path, PathBuf},
     process::{self, Stdio},
@@ -19,7 +19,9 @@ use std::{
 use crate::{
     configs::{Config, SearchDirectory, VcsProviders, DEFAULT_VCS_PROVIDERS},
     dirty_paths::DirtyUtf8Path,
-    session::{Session, SessionContainer, SessionType},
+    picker::PickerItem,
+    session::{generate_session_container, Session, SessionContainer, SessionType},
+    tmux::Tmux,
     Result, TmsError,
 };
 
@@ -241,19 +243,21 @@ impl RepoProvider {
 
             RepoProvider::Jujutsu(workspace) => {
                 let mut repos: Vec<RepoProvider> = Vec::new();
-
-                search_dirs(config, |_, repo| {
-                    if !repo.is_worktree() {
-                        return Ok(());
+                let sessions = search_dirs(config)?;
+                for session in sessions {
+                    if let SessionType::Git = session.session_type {
+                        let repo = RepoProvider::open(&session.path, config)?;
+                        if !repo.is_worktree() {
+                            continue;
+                        }
+                        let Some(path) = repo.main_repo() else {
+                            continue;
+                        };
+                        if workspace.repo_path() == path {
+                            repos.push(repo);
+                        }
                     }
-                    let Some(path) = repo.main_repo() else {
-                        return Ok(());
-                    };
-                    if workspace.repo_path() == path {
-                        repos.push(repo);
-                    }
-                    Ok(())
-                })?;
+                }
 
                 if self.is_bare() {
                     if let Ok(read_dir) = fs::read_dir(self.path()) {
@@ -286,68 +290,95 @@ impl RepoProvider {
     }
 }
 
-pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
-    let mut repos: HashMap<String, Vec<Session>> = HashMap::new();
+pub fn get_picker_items(config: &Config, tmux: &Tmux) -> Result<Vec<PickerItem>> {
+    let sessions = search_dirs(config)?;
+    let mut sessions_map: HashMap<String, Vec<Session>> = HashMap::new();
+    for session in sessions {
+        sessions_map
+            .entry(session.name.clone())
+            .or_default()
+            .push(session);
+    }
+    let sessions_map = append_bookmarks(config, sessions_map)?;
+    let sessions: HashMap<String, Session> =
+        generate_session_container(sessions_map, config)?;
 
-    search_dirs(config, |file, repo| {
-        if repo.is_worktree() {
-            return Ok(());
+    let mut picker_items: Vec<PickerItem> = sessions
+        .into_values()
+        .map(|session| PickerItem::Project {
+            name: session.name,
+            path: session.path,
+        })
+        .collect();
+
+    if config.search_tmux_sessions.unwrap_or(true) {
+        let running_sessions = tmux.get_running_sessions()?;
+        let project_session_names: HashSet<String> =
+            picker_items.iter().map(|p| p.name().to_string()).collect();
+
+        for session_name in running_sessions {
+            if !project_session_names.contains(&session_name) {
+                picker_items.push(PickerItem::TmuxSession(session_name));
+            }
         }
+    }
 
-        let session_name = file
-            .path
-            .file_name()
-            .ok_or_else(|| {
-                Report::new(TmsError::GitError).attach_printable("Not a valid repository name")
-            })?
-            .to_string()?;
-
-        let session = Session::new(session_name, SessionType::Git(repo));
-        if let Some(list) = repos.get_mut(&session.name) {
-            list.push(session);
-        } else {
-            repos.insert(session.name.clone(), vec![session]);
-        }
-        Ok(())
-    })?;
-    Ok(repos)
+    Ok(picker_items)
 }
 
-fn search_dirs<F>(config: &Config, mut f: F) -> Result<()>
-where
-    F: FnMut(SearchDirectory, RepoProvider) -> Result<()>,
-{
-    {
-        let directories = config.search_dirs().change_context(TmsError::ConfigError)?;
-        let mut to_search: VecDeque<SearchDirectory> = directories.into();
+fn search_dirs(config: &Config) -> Result<Vec<Session>> {
+    let directories = config.search_dirs().change_context(TmsError::ConfigError)?;
+    let mut to_search: VecDeque<SearchDirectory> = directories.into();
+    let mut sessions = Vec::new();
 
-        let excluder = if let Some(excluded_dirs) = &config.excluded_dirs {
-            Some(
-                AhoCorasickBuilder::new()
-                    .match_kind(MatchKind::LeftmostFirst)
-                    .build(excluded_dirs)
-                    .change_context(TmsError::IoError)?,
-            )
-        } else {
-            None
-        };
+    let excluder = if let Some(excluded_dirs) = &config.excluded_dirs {
+        Some(
+            AhoCorasickBuilder::new()
+                .match_kind(MatchKind::LeftmostFirst)
+                .build(excluded_dirs)
+                .change_context(TmsError::IoError)?,
+        )
+    } else {
+        None
+    };
 
-        while let Some(file) = to_search.pop_front() {
-            if let Some(ref excluder) = excluder {
-                if excluder.is_match(&file.path.to_string()?) {
-                    continue;
-                }
+    while let Some(file) = to_search.pop_front() {
+        if let Some(ref excluder) = excluder {
+            if excluder.is_match(&file.path.to_string()?) {
+                continue;
+            }
+        }
+
+        if RepoProvider::open(&file.path, config).is_ok() {
+            let session_name = file
+                .path
+                .file_name()
+                .ok_or_else(|| {
+                    Report::new(TmsError::GitError).attach_printable("Not a valid repository name")
+                })?
+                .to_string()?;
+            let session = Session::new(session_name, file.path.clone(), SessionType::Git);
+            sessions.push(session);
+        } else if file.path.is_dir() {
+            if config.search_non_git_dirs == Some(true) {
+                let session_name = file
+                    .path
+                    .file_name()
+                    .ok_or_else(|| {
+                        Report::new(TmsError::GitError).attach_printable("Not a valid directory name")
+                    })?
+                    .to_string()?;
+                let session = Session::new(session_name, file.path.clone(), SessionType::Path);
+                sessions.push(session);
             }
 
-            if let Ok(repo) = RepoProvider::open(&file.path, config) {
-                f(file, repo)?;
-            } else if file.path.is_dir() && file.depth > 0 {
+            if file.depth > 0 {
                 match fs::read_dir(&file.path) {
                     Err(ref e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
                         eprintln!(
-                        "Warning: insufficient permissions to read '{0}'. Skipping directory...",
-                        file.path.to_string()?
-                    );
+                            "Warning: insufficient permissions to read '{0}'. Skipping directory...",
+                            file.path.to_string()?
+                        );
                     }
                     Err(e) => {
                         let report = report!(e)
@@ -373,8 +404,30 @@ where
                 }
             }
         }
-        Ok(())
     }
+    Ok(sessions)
+}
+
+fn append_bookmarks(
+    config: &Config,
+    mut sessions: HashMap<String, Vec<Session>>,
+) -> Result<HashMap<String, Vec<Session>>> {
+    let bookmarks = config.bookmark_paths();
+
+    for path in bookmarks {
+        let session_name = path
+            .file_name()
+            .expect("The file name doesn't end in `..`")
+            .to_string()?;
+        let session = Session::new(session_name.clone(), path, SessionType::Path);
+        if let Some(list) = sessions.get_mut(&session_name) {
+            list.push(session);
+        } else {
+            sessions.insert(session_name, vec![session]);
+        }
+    }
+
+    Ok(sessions)
 }
 
 pub fn find_submodules<'a>(
@@ -410,7 +463,7 @@ pub fn find_submodules<'a>(
                 find_submodules(submodules, &name, repos, config)?;
             }
         }
-        let session = Session::new(session_name, SessionType::Git(repo.into()));
+        let session = Session::new(session_name, path.to_path_buf(), SessionType::Git);
         repos.insert_session(name, session);
     }
     Ok(())
