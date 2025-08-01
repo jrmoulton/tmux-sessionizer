@@ -9,7 +9,8 @@ Tmux Sessionizer is a tmux session manager that is based on ThePrimeagen's
 but is opinionated and personalized to my specific tmux workflow. And it's awesome. Git worktrees
 are automatically opened as new windows, specific directories can be excluded, a default session can
 be set, killing a session jumps you to a default, and it is a goal to handle more edge case
-scenarios.
+scenarios. By default, tms searches for git repositories, but it can be configured to search for any
+directory.
 
 Tmux has keybindings built-in to allow you to switch between sessions. By default, these are
 `leader-(` and `leader-)`
@@ -116,6 +117,8 @@ Options:
           Search submodules for submodules [possible values: true, false]
       --switch-filter-unknown <true | false>
           Only include sessions from search paths in the switcher [possible values: true, false]
+      --search-non-git-dirs <true | false>
+          Also search for non-git directories [possible values: true, false]
   -d, --max-depths <max depth>...
           The maximum depth to traverse when searching for repositories in search paths, length should match the number of search paths if specified (defaults to 10)
       --picker-highlight-color <#rrggbb>
