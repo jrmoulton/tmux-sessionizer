@@ -1,6 +1,9 @@
+mod item;
 mod preview;
 
-use std::{process, rc::Rc, sync::Arc};
+pub use item::PickerItem;
+
+use std::{collections::HashSet, process, rc::Rc, sync::Arc};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use nucleo::{
@@ -41,8 +44,9 @@ pub enum InputPosition {
 }
 
 pub struct Picker<'a> {
-    matcher: Nucleo<String>,
+    matcher: Nucleo<PickerItem>,
     preview: Option<Preview>,
+    running_sessions: HashSet<String>,
 
     colors: Option<&'a PickerColorConfig>,
 
@@ -56,7 +60,8 @@ pub struct Picker<'a> {
 
 impl<'a> Picker<'a> {
     pub fn new(
-        list: &[String],
+        list: Vec<PickerItem>,
+        running_sessions: HashSet<String>,
         preview: Option<Preview>,
         keymap: Option<&Keymap>,
         input_position: InputPosition,
@@ -66,8 +71,9 @@ impl<'a> Picker<'a> {
 
         let injector = matcher.injector();
 
-        for str in list {
-            injector.push(str.to_owned(), |_, dst| dst[0] = str.to_owned().into());
+        for item in list {
+            let display_name = item.display_name(&running_sessions);
+            injector.push(item, |_, dst| dst[0] = display_name.into());
         }
 
         let keymap = if let Some(keymap) = keymap {
@@ -79,6 +85,7 @@ impl<'a> Picker<'a> {
         Picker {
             matcher,
             preview,
+            running_sessions,
             colors: None,
             selection: ListState::default(),
             filter: String::default(),
@@ -95,19 +102,19 @@ impl<'a> Picker<'a> {
         self
     }
 
-    pub fn run(&mut self) -> Result<Option<String>> {
+    pub fn run(&mut self) -> Result<Option<PickerItem>> {
         let mut terminal = ratatui::init();
 
-        let selected_str = self
+        let selected_item = self
             .main_loop(&mut terminal)
             .map_err(|e| TmsError::TuiError(e.to_string()));
 
         ratatui::restore();
 
-        Ok(selected_str?)
+        Ok(selected_item?)
     }
 
-    fn main_loop(&mut self, terminal: &mut DefaultTerminal) -> Result<Option<String>> {
+    fn main_loop(&mut self, terminal: &mut DefaultTerminal) -> Result<Option<PickerItem>> {
         loop {
             self.matcher.tick(10);
             self.update_selection();
@@ -121,7 +128,7 @@ impl<'a> Picker<'a> {
                         Some(PickerAction::Cancel) => return Ok(None),
                         Some(PickerAction::Confirm) => {
                             if let Some(selected) = self.get_selected() {
-                                return Ok(Some(selected.to_owned()));
+                                return Ok(Some(selected));
                             }
                         }
                         Some(PickerAction::Backspace) => self.remove_filter(),
@@ -152,7 +159,7 @@ impl<'a> Picker<'a> {
         if let Some(selected) = self.selection.selected() {
             if snapshot.matched_item_count() == 0 {
                 self.selection.select(None);
-            } else if selected > snapshot.matched_item_count() as usize {
+            } else if selected >= snapshot.matched_item_count() as usize {
                 self.selection
                     .select(Some(snapshot.matched_item_count() as usize - 1));
             }
@@ -224,7 +231,7 @@ impl<'a> Picker<'a> {
         let snapshot = self.matcher.snapshot();
         let matches = snapshot
             .matched_items(..snapshot.matched_item_count())
-            .map(|item| ListItem::new(item.data.as_str()));
+            .map(|item| ListItem::new(item.data.display_name(&self.running_sessions)));
 
         let colors = if let Some(colors) = self.colors {
             colors.to_owned()
@@ -273,19 +280,20 @@ impl<'a> Picker<'a> {
 
     fn get_preview_text(&self) -> String {
         if let Some(item_data) = self.get_selected() {
+            let item_data_str = item_data.name();
             let output = match self.preview {
-                Some(Preview::SessionPane) => self.tmux.capture_pane(item_data),
+                Some(Preview::SessionPane) => self.tmux.capture_pane(item_data_str),
                 Some(Preview::WindowPane) => self.tmux.capture_pane(
-                    item_data
+                    item_data_str
                         .split_once(' ')
                         .map(|val| val.0)
                         .unwrap_or_default(),
                 ),
                 Some(Preview::Directory) => process::Command::new("ls")
-                    .args(["-1", item_data])
+                    .args(["-1", item_data_str])
                     .output()
                     .unwrap_or_else(|_| {
-                        panic!("Failed to execute the command for directory: {}", item_data)
+                        panic!("Failed to execute the command for directory: {}", item_data_str)
                     }),
                 None => panic!("preview rendering should not have occured"),
             };
@@ -300,13 +308,13 @@ impl<'a> Picker<'a> {
         }
     }
 
-    fn get_selected(&self) -> Option<&String> {
+    fn get_selected(&self) -> Option<PickerItem> {
         if let Some(index) = self.selection.selected() {
             return self
                 .matcher
                 .snapshot()
                 .get_matched_item(index as u32)
-                .map(|item| item.data);
+                .map(|item| item.data.clone());
         }
 
         None

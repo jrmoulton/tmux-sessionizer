@@ -86,7 +86,7 @@ pub fn marks_command(args: &MarksCommand, config: Config, tmux: &Tmux) -> Result
 fn list(config: Config) -> Result<()> {
     let items = get_marks(&config).unwrap_or_default();
     items.iter().for_each(|(index, session)| {
-        println!("{index}: {} ({})", session.name, session.path().display());
+        println!("{index}: {} ({})", session.name, session.path.display());
     });
     Ok(())
 }
@@ -137,7 +137,16 @@ fn open(index: usize, config: &Config, tmux: &Tmux) -> Result<()> {
 
     let session = path_to_session(path)?;
 
-    session.switch_to(tmux, config)
+    let session_name = session.name.replace('.', "_");
+
+    if !tmux.session_exists(&session_name) {
+        tmux.new_session(Some(&session_name), session.path.to_str());
+        tmux.run_session_create_script(&session.path, &session_name, config)?;
+    }
+
+    tmux.switch_to_session(&session_name);
+
+    Ok(())
 }
 
 fn path_to_session(path: &String) -> Result<Session> {
@@ -153,7 +162,11 @@ fn path_to_session(path: &String) -> Result<Session> {
         .file_name()
         .expect("The file name doesn't end in `..`")
         .to_string()?;
-    let session = Session::new(session_name, crate::session::SessionType::Bookmark(path));
+    let session = Session::new(
+        session_name,
+        path.clone(),
+        crate::session::SessionType::Path,
+    );
     Ok(session)
 }
 

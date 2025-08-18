@@ -1,88 +1,34 @@
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
-
-use error_stack::ResultExt;
 
 use crate::{
     configs::Config,
-    dirty_paths::DirtyUtf8Path,
-    error::TmsError,
-    repos::{find_repos, find_submodules, RepoProvider},
-    tmux::Tmux,
+    repos::{find_submodules, RepoProvider},
     Result,
 };
 
+#[derive(Clone)]
 pub struct Session {
     pub name: String,
+    pub path: PathBuf,
     pub session_type: SessionType,
 }
 
+#[derive(Clone)]
 pub enum SessionType {
-    Git(RepoProvider),
-    Bookmark(PathBuf),
+    Git,
+    Path,
 }
 
 impl Session {
-    pub fn new(name: String, session_type: SessionType) -> Self {
-        Session { name, session_type }
-    }
-
-    pub fn path(&self) -> &Path {
-        match &self.session_type {
-            SessionType::Git(repo) if repo.is_bare() => repo.path(),
-            SessionType::Git(repo) => repo.path().parent().unwrap(),
-            SessionType::Bookmark(path) => path,
+    pub fn new(name: String, path: PathBuf, session_type: SessionType) -> Self {
+        Session {
+            name,
+            path,
+            session_type,
         }
-    }
-
-    pub fn switch_to(&self, tmux: &Tmux, config: &Config) -> Result<()> {
-        match &self.session_type {
-            SessionType::Git(repo) => self.switch_to_repo_session(repo, tmux, config),
-            SessionType::Bookmark(path) => self.switch_to_bookmark_session(tmux, path, config),
-        }
-    }
-
-    fn switch_to_repo_session(
-        &self,
-        repo: &RepoProvider,
-        tmux: &Tmux,
-        config: &Config,
-    ) -> Result<()> {
-        let path = if repo.is_bare() {
-            repo.path().to_path_buf().to_string()?
-        } else {
-            repo.work_dir()
-                .expect("bare repositories should all have parent directories")
-                .canonicalize()
-                .change_context(TmsError::IoError)?
-                .to_string()?
-        };
-        let session_name = self.name.replace('.', "_");
-
-        if !tmux.session_exists(&session_name) {
-            tmux.new_session(Some(&session_name), Some(&path));
-            tmux.set_up_tmux_env(repo, &session_name, config)?;
-            tmux.run_session_create_script(self.path(), &session_name, config)?;
-        }
-
-        tmux.switch_to_session(&session_name);
-
-        Ok(())
-    }
-
-    fn switch_to_bookmark_session(&self, tmux: &Tmux, path: &Path, config: &Config) -> Result<()> {
-        let session_name = self.name.replace('.', "_");
-
-        if !tmux.session_exists(&session_name) {
-            tmux.new_session(Some(&session_name), path.to_str());
-            tmux.run_session_create_script(path, &session_name, config)?;
-        }
-
-        tmux.switch_to_session(&session_name);
-
-        Ok(())
     }
 }
 
@@ -109,19 +55,10 @@ impl SessionContainer for HashMap<String, Session> {
     }
 }
 
-pub fn create_sessions(config: &Config) -> Result<impl SessionContainer> {
-    let mut sessions = find_repos(config)?;
-    sessions = append_bookmarks(config, sessions)?;
-
-    let sessions = generate_session_container(sessions, config)?;
-
-    Ok(sessions)
-}
-
-fn generate_session_container(
+pub fn generate_session_container(
     mut sessions: HashMap<String, Vec<Session>>,
     config: &Config,
-) -> Result<impl SessionContainer> {
+) -> Result<HashMap<String, Session>> {
     let mut ret = HashMap::new();
 
     for list in sessions.values_mut() {
@@ -146,14 +83,16 @@ fn insert_session(
     config: &Config,
 ) -> Result<()> {
     let visible_name = if config.display_full_path == Some(true) {
-        session.path().display().to_string()
+        session.path.display().to_string()
     } else {
         session.name.clone()
     };
-    if let SessionType::Git(repo) = &session.session_type {
+    if let SessionType::Git = &session.session_type {
         if config.search_submodules == Some(true) {
-            if let Ok(Some(submodules)) = repo.submodules() {
-                find_submodules(submodules, &visible_name, sessions, config)?;
+            if let Ok(repo) = RepoProvider::open(&session.path, config) {
+                if let Ok(Some(submodules)) = repo.submodules() {
+                    find_submodules(submodules, &visible_name, sessions, config)?;
+                }
             }
         }
     }
@@ -166,14 +105,14 @@ fn deduplicate_sessions(duplicate_sessions: &mut Vec<Session>) -> Vec<Session> {
     let mut deduplicated = Vec::new();
     while let Some(current_session) = duplicate_sessions.pop() {
         let mut equal = true;
-        let current_path = current_session.path();
+        let current_path = &current_session.path;
         let mut current_depth = 1;
 
         while equal {
             equal = false;
             if let Some(current_str) = current_path.iter().rev().nth(current_depth) {
                 for session in &mut *duplicate_sessions {
-                    if let Some(str) = session.path().iter().rev().nth(current_depth) {
+                    if let Some(str) = session.path.iter().rev().nth(current_depth) {
                         if str == current_str {
                             current_depth += 1;
                             equal = true;
@@ -191,7 +130,7 @@ fn deduplicate_sessions(duplicate_sessions: &mut Vec<Session>) -> Vec<Session> {
     for session in &mut deduplicated {
         session.name = {
             let mut count = depth + 1;
-            let mut iterator = session.path().iter().rev();
+            let mut iterator = session.path.iter().rev();
             let mut str = String::new();
 
             while count > 0 {
@@ -214,28 +153,6 @@ fn deduplicate_sessions(duplicate_sessions: &mut Vec<Session>) -> Vec<Session> {
     deduplicated
 }
 
-fn append_bookmarks(
-    config: &Config,
-    mut sessions: HashMap<String, Vec<Session>>,
-) -> Result<HashMap<String, Vec<Session>>> {
-    let bookmarks = config.bookmark_paths();
-
-    for path in bookmarks {
-        let session_name = path
-            .file_name()
-            .expect("The file name doesn't end in `..`")
-            .to_string()?;
-        let session = Session::new(session_name, SessionType::Bookmark(path));
-        if let Some(list) = sessions.get_mut(&session.name) {
-            list.push(session);
-        } else {
-            sessions.insert(session.name.clone(), vec![session]);
-        }
-    }
-
-    Ok(sessions)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,15 +162,18 @@ mod tests {
         let mut test_sessions = vec![
             Session::new(
                 "test".into(),
-                SessionType::Bookmark("/search/path/to/proj1/test".into()),
+                "/search/path/to/proj1/test".into(),
+                SessionType::Path,
             ),
             Session::new(
                 "test".into(),
-                SessionType::Bookmark("/search/path/to/proj2/test".into()),
+                "/search/path/to/proj2/test".into(),
+                SessionType::Path,
             ),
             Session::new(
                 "test".into(),
-                SessionType::Bookmark("/other/path/to/projects/proj2/test".into()),
+                "/other/path/to/projects/proj2/test".into(),
+                SessionType::Path,
             ),
         ];
 
