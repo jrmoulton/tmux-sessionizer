@@ -4,7 +4,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Serialize};
-use serde_derive::{Deserialize, Serialize};
 
 use crate::TmsError;
 

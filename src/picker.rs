@@ -447,7 +447,7 @@ impl Picker {
 
 fn request_redraw() {}
 
-fn str_to_text(s: &str, max: usize) -> Text {
+fn str_to_text(s: &str, max: usize) -> Text<'_> {
     let mut text = Text::default();
     let mut style = Style::default();
     let mut tspan = String::new();

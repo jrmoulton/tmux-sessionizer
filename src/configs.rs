@@ -1,11 +1,11 @@
 use clap::ValueEnum;
 use error_stack::{Result, ResultExt};
-use serde_derive::{Deserialize, Serialize};
-use std::{env, fmt::Display, fs::canonicalize, io::Write, path::PathBuf};
+use serde::{Deserialize, Serialize};
+use std::{env, fmt::Display, fs::canonicalize, fs::exists, io::Write, path::PathBuf};
 
 use ratatui::style::{Color, Style};
 
-use crate::{dirty_paths::DirtyUtf8Path, keymap::Keymap, TmsError};
+use crate::{keymap::Keymap, TmsError};
 
 #[derive(Debug)]
 pub(crate) enum ConfigError {
@@ -85,7 +85,6 @@ impl Config {
             .attach_printable("Could not deserialize configuration")
     }
 
-
     pub(crate) fn save(&self) -> Result<PathBuf, ConfigError> {
         let toml_pretty = toml::to_string_pretty(self)
             .change_context(ConfigError::TomlError)?
@@ -102,7 +101,8 @@ impl Config {
         std::fs::create_dir_all(parent)
             .change_context(ConfigError::FileWriteError)
             .attach_printable("Unable to create tms config folder")?;
-        let mut file = std::fs::File::create(path.clone()).change_context(ConfigError::FileWriteError)?;
+        let mut file =
+            std::fs::File::create(path.clone()).change_context(ConfigError::FileWriteError)?;
         file.write_all(&toml_pretty)
             .change_context(ConfigError::FileWriteError)?;
         Ok(path)
@@ -112,17 +112,26 @@ impl Config {
         let mut search_dirs = if let Some(search_dirs) = self.search_dirs.as_ref() {
             search_dirs
                 .iter()
-                .map(|search_dir| {
+                .filter_map(|search_dir| {
                     let expanded_path = shellexpand::full(&search_dir.path.to_string_lossy())
                         .change_context(TmsError::IoError)
                         .unwrap()
                         .to_string();
 
-                    let path = canonicalize(expanded_path)
-                        .change_context(TmsError::IoError)
-                        .unwrap();
+                    println!("{}", expanded_path);
 
-                    SearchDirectory::new(path, search_dir.depth)
+                    if !exists(&expanded_path).is_ok_and(|x| x) {
+                        println!("{} is not ok", expanded_path);
+                        return None;
+                    }
+                    let path = canonicalize(expanded_path)
+                        // .change_context(TmsError::IoError)
+                        .unwrap_or_else(|err| {
+                            println!("{err:?}");
+                            panic!();
+                        });
+
+                    return Some(SearchDirectory::new(path, search_dir.depth));
                 })
                 .collect()
         } else {
@@ -175,7 +184,7 @@ pub(crate) fn config_path() -> Result<PathBuf, ConfigError> {
             } else {
                 return Err(ConfigError::LoadError)
                     .attach_printable("Could not find a valid location for config file (both home and config dirs cannot be found)");
-                    // .attach(Suggestion("Try specifying a config file with the TMS_CONFIG_FILE environment variable."));
+                // .attach(Suggestion("Try specifying a config file with the TMS_CONFIG_FILE environment variable."));
             }
         }
     };
