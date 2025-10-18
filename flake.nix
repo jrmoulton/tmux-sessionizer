@@ -50,12 +50,7 @@
             src = craneLib.cleanCargoSource ./.;
             strictDeps = true;
 
-            OPENSSL_NO_VENDOR = 1;
-            buildInputs = [
-              openssl
-            ];
             nativeBuildInputs = [
-              pkg-config
               installShellFiles
             ];
           };
@@ -101,7 +96,6 @@
           };
 
           devShells.default = craneLib.devShell {
-            OPENSSL_NO_VENDOR = 1;
             inputsFrom = [ tmux-sessionizer ];
             packages = with pkgs; [
               rust-analyzer
