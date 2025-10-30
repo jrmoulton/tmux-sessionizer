@@ -216,6 +216,13 @@ impl Default for Keymap {
             ),
             (
                 Key {
+                    code: KeyCode::Enter,
+                    modifiers: KeyModifiers::CONTROL,
+                },
+                PickerAction::ForceCreate,
+            ),
+            (
+                Key {
                     code: KeyCode::Delete,
                     modifiers: KeyModifiers::empty(),
                 },
@@ -341,6 +348,8 @@ pub enum PickerAction {
     Cancel,
     #[serde(rename = "confirm")]
     Confirm,
+    #[serde(rename = "force_create")]
+    ForceCreate,
     #[serde(rename = "backspace")]
     Backspace,
     #[serde(rename = "delete")]
