@@ -10,7 +10,7 @@ use nucleo::{
 use preview::PreviewWidget;
 use ratatui::{
     layout::{self, Constraint, Direction, Layout},
-    style::Style,
+    style::{Style, Stylize},
     text::{Line, Span},
     widgets::{
         block::Position, Block, Borders, HighlightSpacing, List, ListDirection, ListItem,
@@ -52,6 +52,7 @@ pub struct Picker<'a> {
     keymap: Keymap,
     input_position: InputPosition,
     tmux: &'a Tmux,
+    active_sessions: Option<std::collections::HashSet<String>>,
 }
 
 impl<'a> Picker<'a> {
@@ -86,11 +87,18 @@ impl<'a> Picker<'a> {
             keymap,
             input_position,
             tmux,
+            active_sessions: None,
         }
     }
 
     pub fn set_colors(mut self, colors: Option<&'a PickerColorConfig>) -> Self {
         self.colors = colors;
+
+        self
+    }
+
+    pub fn set_active_sessions(mut self, active: std::collections::HashSet<String>) -> Self {
+        self.active_sessions = Some(active);
 
         self
     }
@@ -224,7 +232,18 @@ impl<'a> Picker<'a> {
         let snapshot = self.matcher.snapshot();
         let matches = snapshot
             .matched_items(..snapshot.matched_item_count())
-            .map(|item| ListItem::new(item.data.as_str()));
+            .map(|item| {
+                let text = item.data.as_str();
+                // Check if this is an active session (make it bold)
+                if let Some(ref active) = self.active_sessions {
+                    // Tmux normalizes both dots and hyphens to underscores in session names
+                    let normalized = text.replace(['.', '-'], "_");
+                    if active.contains(text) || active.contains(&normalized) {
+                        return ListItem::new(Span::styled(text, Style::default().bold()));
+                    }
+                }
+                ListItem::new(text)
+            });
 
         let colors = if let Some(colors) = self.colors {
             colors.to_owned()
