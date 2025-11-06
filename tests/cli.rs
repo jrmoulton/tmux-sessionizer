@@ -47,6 +47,7 @@ fn tms_config() -> anyhow::Result<()> {
         search_submodules: Some(false),
         recursive_submodules: Some(false),
         switch_filter_unknown: Some(false),
+        search_non_git_dirs: Some(false),
         session_sort_order: Some(SessionSortOrderConfig::Alphabetical),
         excluded_dirs: Some(vec![excluded_dir.clone()]),
         search_paths: None,
@@ -90,6 +91,8 @@ fn tms_config() -> anyhow::Result<()> {
             "false",
             "--switch-filter-unknown",
             "false",
+            "--search-non-git-dirs",
+            "false",
             "--session-sort-order",
             "Alphabetical",
             "--excluded",
@@ -116,6 +119,141 @@ fn tms_config() -> anyhow::Result<()> {
         expected_config, actual_config,
         "tms config behaves as intended"
     );
+
+    Ok(())
+}
+
+#[test]
+fn tms_list_dirs_without_non_git_dirs() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let temp_dir_path = temp_dir.path();
+
+    // Create a git repo
+    let git_repo_path = temp_dir_path.join("git_repo");
+    fs::create_dir(&git_repo_path)?;
+    gix::init(&git_repo_path)?;
+
+    // Create a non-git directory
+    let non_git_dir_path = temp_dir_path.join("non_git_dir");
+    fs::create_dir(&non_git_dir_path)?;
+
+    let config = Config {
+        search_non_git_dirs: Some(false),
+        search_dirs: Some(vec![SearchDirectory::new(
+            fs::canonicalize(temp_dir_path)?,
+            1,
+        )]),
+        ..Default::default()
+    };
+
+    let config_file_path = temp_dir_path.join("config.toml");
+    fs::write(&config_file_path, toml::to_string(&config)?)?;
+
+    let mut tms = Command::cargo_bin("tms")?;
+    tms.env("TMS_CONFIG_FILE", &config_file_path);
+    tms.arg("--just-print"); // a fake argument to just print the list and not launch fzf
+    let output = tms.assert().success().get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(output.contains("git_repo"));
+    assert!(!output.contains("non_git_dir"));
+
+    Ok(())
+}
+
+#[test]
+fn tms_list_dirs_with_non_git_dirs() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let temp_dir_path = temp_dir.path();
+
+    // Create a git repo
+    let git_repo_path = temp_dir_path.join("git_repo");
+    fs::create_dir(&git_repo_path)?;
+    gix::init(&git_repo_path)?;
+
+    // Create a non-git directory
+    let non_git_dir_path = temp_dir_path.join("non_git_dir");
+    fs::create_dir(&non_git_dir_path)?;
+
+    let config = Config {
+        search_non_git_dirs: Some(true),
+        search_dirs: Some(vec![SearchDirectory::new(
+            fs::canonicalize(temp_dir_path)?,
+            1,
+        )]),
+        ..Default::default()
+    };
+
+    let config_file_path = temp_dir_path.join("config.toml");
+    fs::write(&config_file_path, toml::to_string(&config)?)?;
+
+    let mut tms = Command::cargo_bin("tms")?;
+    tms.env("TMS_CONFIG_FILE", &config_file_path);
+    tms.arg("--just-print"); // a fake argument to just print the list and not launch fzf
+    let output = tms.assert().success().get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(output.contains("git_repo"));
+    assert!(output.contains("non_git_dir"));
+
+    Ok(())
+}
+
+#[test]
+fn tms_list_dirs_with_override_flags() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let temp_dir_path = temp_dir.path();
+
+    // Create a git repo
+    let git_repo_path = temp_dir_path.join("git_repo");
+    fs::create_dir(&git_repo_path)?;
+    gix::init(&git_repo_path)?;
+
+    // Create a non-git directory
+    let non_git_dir_path = temp_dir_path.join("non_git_dir");
+    fs::create_dir(&non_git_dir_path)?;
+
+    // Test case 1: config says search non-git, but override with --search-git-dirs
+    let config = Config {
+        search_non_git_dirs: Some(true),
+        search_dirs: Some(vec![SearchDirectory::new(
+            fs::canonicalize(temp_dir_path)?,
+            1,
+        )]),
+        ..Default::default()
+    };
+    let config_file_path = temp_dir_path.join("config.toml");
+    fs::write(&config_file_path, toml::to_string(&config)?)?;
+
+    let mut tms = Command::cargo_bin("tms")?;
+    tms.env("TMS_CONFIG_FILE", &config_file_path);
+    tms.args(["--just-print", "--search-git-dirs"]);
+    let output = tms.assert().success().get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(output.contains("git_repo"));
+    assert!(!output.contains("non_git_dir"));
+
+    // Test case 2: config says search only git, but override with --search-non-git-dirs
+    let config = Config {
+        search_non_git_dirs: Some(false),
+        search_dirs: Some(vec![SearchDirectory::new(
+            fs::canonicalize(temp_dir_path)?,
+            1,
+        )]),
+        ..Default::default()
+    };
+    let config_file_path = temp_dir_path.join("config2.toml");
+    fs::write(&config_file_path, toml::to_string(&config)?)?;
+
+    let mut tms = Command::cargo_bin("tms")?;
+    tms.env("TMS_CONFIG_FILE", &config_file_path);
+    tms.args(["--just-print", "--search-non-git-dirs"]);
+    let output = tms.assert().success().get_output().stdout.clone();
+    let output = String::from_utf8(output)?;
+
+    assert!(output.contains("git_repo"));
+    assert!(output.contains("non_git_dir"));
 
     Ok(())
 }

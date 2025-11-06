@@ -30,6 +30,14 @@ use ratatui::style::Color;
 pub struct Cli {
     #[command(subcommand)]
     command: Option<CliCommand>,
+    #[arg(long, hide = true)]
+    just_print: bool,
+    #[arg(long, group = "search_type")]
+    /// Search for non-git directories, overriding config.
+    search_non_git_dirs: bool,
+    #[arg(long, group = "search_type")]
+    /// Search only for git directories, overriding config.
+    search_git_dirs: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -112,6 +120,9 @@ pub struct ConfigArgs {
     #[arg(long, value_name = "true | false")]
     ///Only include sessions from search paths in the switcher
     switch_filter_unknown: Option<bool>,
+    #[arg(long, value_name = "true | false")]
+    /// Also search for non-git directories
+    search_non_git_dirs: Option<bool>,
     #[arg(long, short = 'd', value_name = "max depth", num_args = 1..)]
     /// The maximum depth to traverse when searching for repositories in search paths, length
     /// should match the number of search paths if specified (defaults to 10)
@@ -186,7 +197,21 @@ pub struct OpenSessionCommand {
 impl Cli {
     pub fn handle_sub_commands(&self, tmux: &Tmux) -> Result<SubCommandGiven> {
         // Get the configuration from the config file
-        let config = Config::new().change_context(TmsError::ConfigError)?;
+        let mut config = Config::new().change_context(TmsError::ConfigError)?;
+
+        if self.search_non_git_dirs {
+            config.search_non_git_dirs = Some(true);
+        } else if self.search_git_dirs {
+            config.search_non_git_dirs = Some(false);
+        }
+
+        if self.just_print {
+            let sessions = create_sessions(&config)?;
+            for session in sessions.list() {
+                println!("{}", session);
+            }
+            return Ok(SubCommandGiven::Yes);
+        }
 
         match &self.command {
             Some(CliCommand::Start) => {
@@ -426,6 +451,10 @@ fn config_command(cmd: &ConfigCommand, mut config: Config) -> Result<()> {
 
     if let Some(switch_filter_unknown) = args.switch_filter_unknown {
         config.switch_filter_unknown = Some(switch_filter_unknown.to_owned());
+    }
+
+    if let Some(search_non_git_dirs) = args.search_non_git_dirs {
+        config.search_non_git_dirs = Some(search_non_git_dirs.to_owned());
     }
 
     if let Some(dirs) = &args.excluded_dirs {

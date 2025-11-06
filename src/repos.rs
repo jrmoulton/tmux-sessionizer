@@ -242,15 +242,17 @@ impl RepoProvider {
             RepoProvider::Jujutsu(workspace) => {
                 let mut repos: Vec<RepoProvider> = Vec::new();
 
-                search_dirs(config, |_, repo| {
-                    if !repo.is_worktree() {
-                        return Ok(());
-                    }
-                    let Some(path) = repo.main_repo() else {
-                        return Ok(());
-                    };
-                    if workspace.repo_path() == path {
-                        repos.push(repo);
+                search_dirs(config, |session| {
+                    if let SessionType::Git(repo) = session.session_type {
+                        if !repo.is_worktree() {
+                            return Ok(());
+                        }
+                        let Some(path) = repo.main_repo() else {
+                            return Ok(());
+                        };
+                        if workspace.repo_path() == path {
+                            repos.push(repo);
+                        }
                     }
                     Ok(())
                 })?;
@@ -289,20 +291,13 @@ impl RepoProvider {
 pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
     let mut repos: HashMap<String, Vec<Session>> = HashMap::new();
 
-    search_dirs(config, |file, repo| {
-        if repo.is_worktree() {
-            return Ok(());
+    search_dirs(config, |session| {
+        if let SessionType::Git(repo) = &session.session_type {
+            if repo.is_worktree() {
+                return Ok(());
+            }
         }
 
-        let session_name = file
-            .path
-            .file_name()
-            .ok_or_else(|| {
-                Report::new(TmsError::GitError).attach_printable("Not a valid repository name")
-            })?
-            .to_string()?;
-
-        let session = Session::new(session_name, SessionType::Git(repo));
         if let Some(list) = repos.get_mut(&session.name) {
             list.push(session);
         } else {
@@ -315,7 +310,7 @@ pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
 
 fn search_dirs<F>(config: &Config, mut f: F) -> Result<()>
 where
-    F: FnMut(SearchDirectory, RepoProvider) -> Result<()>,
+    F: FnMut(Session) -> Result<()>,
 {
     {
         let directories = config.search_dirs().change_context(TmsError::ConfigError)?;
@@ -340,34 +335,58 @@ where
             }
 
             if let Ok(repo) = RepoProvider::open(&file.path, config) {
-                f(file, repo)?;
-            } else if file.path.is_dir() && file.depth > 0 {
-                match fs::read_dir(&file.path) {
-                    Err(ref e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                        eprintln!(
+                let session_name = file
+                    .path
+                    .file_name()
+                    .ok_or_else(|| {
+                        Report::new(TmsError::GitError)
+                            .attach_printable("Not a valid repository name")
+                    })?
+                    .to_string()?;
+                let session = Session::new(session_name, SessionType::Git(repo));
+                f(session)?;
+            } else if file.path.is_dir() {
+                if config.search_non_git_dirs == Some(true) {
+                    let session_name = file
+                        .path
+                        .file_name()
+                        .ok_or_else(|| {
+                            Report::new(TmsError::GitError)
+                                .attach_printable("Not a valid directory name")
+                        })?
+                        .to_string()?;
+                    let session = Session::new(session_name, SessionType::Path(file.path.clone()));
+                    f(session)?;
+                }
+
+                if file.depth > 0 {
+                    match fs::read_dir(&file.path) {
+                        Err(ref e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                            eprintln!(
                         "Warning: insufficient permissions to read '{0}'. Skipping directory...",
                         file.path.to_string()?
                     );
-                    }
-                    Err(e) => {
-                        let report = report!(e)
-                            .change_context(TmsError::IoError)
-                            .attach_printable(format!("Could not read directory {:?}", file.path));
-                        return Err(report);
-                    }
-                    Ok(read_dir) => {
-                        let mut subdirs = read_dir
-                            .filter_map(|dir_entry| {
-                                if let Ok(dir) = dir_entry {
-                                    Some(SearchDirectory::new(dir.path(), file.depth - 1))
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<VecDeque<SearchDirectory>>();
+                        }
+                        Err(e) => {
+                            let report = report!(e)
+                                .change_context(TmsError::IoError)
+                                .attach_printable(format!("Could not read directory {:?}", file.path));
+                            return Err(report);
+                        }
+                        Ok(read_dir) => {
+                            let mut subdirs = read_dir
+                                .filter_map(|dir_entry| {
+                                    if let Ok(dir) = dir_entry {
+                                        Some(SearchDirectory::new(dir.path(), file.depth - 1))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<VecDeque<SearchDirectory>>();
 
-                        if !subdirs.is_empty() {
-                            to_search.append(&mut subdirs);
+                            if !subdirs.is_empty() {
+                                to_search.append(&mut subdirs);
+                            }
                         }
                     }
                 }
