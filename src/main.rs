@@ -97,7 +97,7 @@ fn get_session_list(
     ) {
         // Get active sessions from tmux with timestamps, excluding the currently attached one
         let active_sessions_raw =
-            tmux.list_sessions("'#{?session_attached,,#{session_name},#{session_last_attached}}'");
+            tmux.list_sessions("'#{?session_attached,,#{session_name}#,#{session_last_attached}}'");
 
         // Parse into (name, timestamp) pairs
         let active_sessions: Vec<(&str, i64)> = active_sessions_raw
@@ -173,8 +173,17 @@ NAME="$1"
 FIRST_DIR="$2"
 
 # Detect Git URL (GitHub, GitLab, etc.) and clone it
+# HTTPS: https://github.com/user/repo.git
+# SSH:   git@github.com:user/repo.git
 if [[ "$NAME" =~ ^https?://[^/]+/([^/]+)/([^/]+)(\.git)?$ ]]; then
     REPO_NAME="${BASH_REMATCH[2]%.git}"
+elif [[ "$NAME" =~ ^git@[^:]+:([^/]+)/([^/]+)(\.git)?$ ]]; then
+    REPO_NAME="${BASH_REMATCH[2]%.git}"
+else
+    REPO_NAME=""
+fi
+
+if [[ -n "$REPO_NAME" ]]; then
     TARGET_DIR="$FIRST_DIR/$REPO_NAME"
 
     # Only clone if directory doesn't exist
