@@ -283,12 +283,10 @@ fn create_new_directory(name: &str, config: &tms::configs::Config, tmux: &Tmux) 
             .attach_printable(format!("Run: chmod +x {}", hook_path.display()));
     }
 
-    // Get search directories from config
+    // Get search directories from config (expanded paths)
     let search_dirs = config
-        .search_dirs
-        .as_ref()
-        .ok_or(TmsError::ConfigError)
-        .attach_printable("No search directories configured in config.toml")?;
+        .search_dirs()
+        .change_context(TmsError::ConfigError)?;
 
     let search_paths: Vec<String> = search_dirs
         .iter()
