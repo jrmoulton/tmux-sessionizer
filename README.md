@@ -65,9 +65,9 @@ a provided `session_name`.
 ### The `tms kill` command
 
 Using this command you can kill current tmux session and automatically jump to another. The config
-could look like this `bind C-k command-prompt -p "Kill current session? (y/N): " "run-shell 'test
-\"%1\" = y && tms kill || true'"`. Then when using leader+C-k you have to confirm killing of the
-current session with `y`. Any other input or just pressing enter aborts it.
+could look like this `bind C-k confirm -p "Kill current session? (y/N):" "run-shell 'tms kill'"`.
+Then when using leader+C-k you have to confirm killing of the current session with `y`. Any other
+input or just pressing enter aborts it.
 
 With `tms config --session <name>` you can define to which session you will switch to after the
 kill.
