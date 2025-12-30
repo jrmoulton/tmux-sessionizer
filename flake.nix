@@ -113,7 +113,7 @@
 
       flake = {
         overlays.default = final: prev: {
-          inherit (self.packages.${final.system}) tmux-sessionizer;
+          inherit (self.packages.${final.stdenv.hostPlatform.system}) tmux-sessionizer;
         };
 
       };
