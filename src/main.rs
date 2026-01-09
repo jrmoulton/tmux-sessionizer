@@ -91,7 +91,7 @@ fn get_session_list(
     ) {
         // Get active sessions from tmux with timestamps, excluding the currently attached one
         let active_sessions_raw =
-            tmux.list_sessions("'#{?session_attached,,#{session_name},#{session_last_attached}}'");
+            tmux.list_sessions("'#{?session_attached,,#{session_name}#,#{session_last_attached}}'");
 
         // Parse into (name, timestamp) pairs
         let active_sessions: Vec<(&str, i64)> = active_sessions_raw
