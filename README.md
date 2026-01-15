@@ -62,6 +62,12 @@ a provided `session_name`.
 
 `bind C-r "run-shell 'tms refresh'"`.
 
+### The `tms exec` command
+
+Using this command you can execute a shell command in a new dedicated session. The session name is automatically derived from the command (e.g. `tms exec top` -> session `top`). If a session with that name already exists, a counter is appended (e.g. `top_1`).
+
+`tms exec <command>`
+
 ### The `tms kill` command
 
 Using this command you can kill current tmux session and automatically jump to another. The config
@@ -95,6 +101,7 @@ Commands:
   bookmark      Bookmark a directory so it is available to select along with the Git repositories
   open-session  Open a session
   marks         Manage list of sessions that can be instantly accessed by their index
+  exec          Execute a command in a new session
   help          Print this message or the help of the given subcommand(s)
 
 Options:

@@ -62,6 +62,15 @@ pub enum CliCommand {
     OpenSession(OpenSessionCommand),
     /// Manage list of sessions that can be instantly accessed by their index
     Marks(MarksCommand),
+    /// Execute a command in a new session
+    Exec(ExecCommand),
+}
+
+#[derive(Debug, Args)]
+pub struct ExecCommand {
+    #[arg(num_args = 1.., required = true)]
+    /// The command to execute
+    command: Vec<String>,
 }
 
 #[derive(Debug, Args)]
@@ -255,6 +264,11 @@ impl Cli {
 
             Some(CliCommand::Marks(args)) => {
                 marks_command(args, config, tmux)?;
+                Ok(SubCommandGiven::Yes)
+            }
+
+            Some(CliCommand::Exec(args)) => {
+                exec_command(args, tmux)?;
                 Ok(SubCommandGiven::Yes)
             }
 
@@ -839,7 +853,84 @@ fn open_session_completion_candidates() -> Vec<CompletionCandidate> {
         .unwrap_or_default()
 }
 
+fn exec_command(args: &ExecCommand, tmux: &Tmux) -> Result<()> {
+    let command_parts = &args.command;
+    let command_str = if command_parts.len() == 1 {
+        command_parts[0].clone()
+    } else {
+        shell_words::join(command_parts)
+    };
+    // Use command_parts for naming (if len 1, uses that word; if >1, uses first 2)
+    // We can pass command_parts directly as it works for both cases
+    let session_name = get_session_name_for_exec(command_parts, |name| tmux.session_exists(name));
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
+    let wrapper_cmd = format!("{} ; exec {}", command_str, shell);
+
+    tmux.new_session_with_command(&session_name, &wrapper_cmd);
+    tmux.switch_to_session(&session_name);
+    Ok(())
+}
+
+fn get_session_name_for_exec(
+    command_parts: &[String],
+    check_exists: impl Fn(&str) -> bool,
+) -> String {
+    let base_name = if command_parts.len() >= 2 {
+        format!("{}_{}", command_parts[0], command_parts[1])
+    } else {
+        command_parts[0].clone()
+    };
+    let mut session_name = base_name.clone();
+    let mut count = 1;
+
+    while check_exists(&session_name) {
+        session_name = format!("{}_{}", base_name, count);
+        count += 1;
+    }
+
+    session_name
+}
+
 pub enum SubCommandGiven {
     Yes,
     No(Box<Config>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_session_name_single_word() {
+        let command = vec!["ls".to_string()];
+        // No existing session -> ls
+        assert_eq!(get_session_name_for_exec(&command, |_| false), "ls");
+        // ls exists -> ls_1
+        assert_eq!(
+            get_session_name_for_exec(&command, |name| name == "ls"),
+            "ls_1"
+        );
+        // ls and ls_1 exist -> ls_2
+        assert_eq!(
+            get_session_name_for_exec(&command, |name| name == "ls" || name == "ls_1"),
+            "ls_2"
+        );
+    }
+
+    #[test]
+    fn test_get_session_name_multi_word() {
+        let command = vec!["ls".to_string(), "-la".to_string(), "/home".to_string()];
+        // No existing session -> ls_-la
+        assert_eq!(get_session_name_for_exec(&command, |_| false), "ls_-la");
+        // ls_-la exists -> ls_-la_1
+        assert_eq!(
+            get_session_name_for_exec(&command, |name| name == "ls_-la"),
+            "ls_-la_1"
+        );
+        // ls_-la and ls_-la_1 exist -> ls_-la_2
+        assert_eq!(
+            get_session_name_for_exec(&command, |name| name == "ls_-la" || name == "ls_-la_1"),
+            "ls_-la_2"
+        );
+    }
 }
