@@ -119,3 +119,13 @@ fn tms_config() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn tms_exec_help() -> anyhow::Result<()> {
+    let mut tms = Command::cargo_bin("tms")?;
+    tms.arg("exec").arg("--help");
+    tms.assert().success().stdout(predicates::str::contains(
+        "Execute a command in a new session",
+    ));
+    Ok(())
+}

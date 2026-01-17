@@ -71,6 +71,11 @@ impl Tmux {
         self.execute_tmux_command(&args)
     }
 
+    pub fn new_session_with_command(&self, name: &str, command: &str) -> process::Output {
+        let args = vec!["new-session", "-d", "-s", name, command];
+        self.execute_tmux_command(&args)
+    }
+
     pub fn list_sessions(&self, format: &str) -> String {
         let output = self.execute_tmux_command(&["list-sessions", "-F", format]);
         Tmux::stdout_to_string(output)
