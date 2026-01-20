@@ -21,7 +21,7 @@ pub struct Session {
 
 pub enum SessionType {
     Git(RepoProvider),
-    Bookmark(PathBuf),
+    Path(PathBuf),
 }
 
 impl Session {
@@ -33,14 +33,14 @@ impl Session {
         match &self.session_type {
             SessionType::Git(repo) if repo.is_bare() => repo.path(),
             SessionType::Git(repo) => repo.path().parent().unwrap(),
-            SessionType::Bookmark(path) => path,
+            SessionType::Path(path) => path,
         }
     }
 
     pub fn switch_to(&self, tmux: &Tmux, config: &Config) -> Result<()> {
         match &self.session_type {
             SessionType::Git(repo) => self.switch_to_repo_session(repo, tmux, config),
-            SessionType::Bookmark(path) => self.switch_to_bookmark_session(tmux, path, config),
+            SessionType::Path(path) => self.switch_to_path_session(tmux, path, config),
         }
     }
 
@@ -72,7 +72,7 @@ impl Session {
         Ok(())
     }
 
-    fn switch_to_bookmark_session(&self, tmux: &Tmux, path: &Path, config: &Config) -> Result<()> {
+    fn switch_to_path_session(&self, tmux: &Tmux, path: &Path, config: &Config) -> Result<()> {
         let session_name = self.name.replace('.', "_");
 
         if !tmux.session_exists(&session_name) {
@@ -225,7 +225,7 @@ fn append_bookmarks(
             .file_name()
             .expect("The file name doesn't end in `..`")
             .to_string()?;
-        let session = Session::new(session_name, SessionType::Bookmark(path));
+        let session = Session::new(session_name, SessionType::Path(path));
         if let Some(list) = sessions.get_mut(&session.name) {
             list.push(session);
         } else {
@@ -245,15 +245,15 @@ mod tests {
         let mut test_sessions = vec![
             Session::new(
                 "test".into(),
-                SessionType::Bookmark("/search/path/to/proj1/test".into()),
+                SessionType::Path("/search/path/to/proj1/test".into()),
             ),
             Session::new(
                 "test".into(),
-                SessionType::Bookmark("/search/path/to/proj2/test".into()),
+                SessionType::Path("/search/path/to/proj2/test".into()),
             ),
             Session::new(
                 "test".into(),
-                SessionType::Bookmark("/other/path/to/projects/proj2/test".into()),
+                SessionType::Path("/other/path/to/projects/proj2/test".into()),
             ),
         ];
 
