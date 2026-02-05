@@ -150,7 +150,7 @@ impl RepoProvider {
 
     pub fn work_dir(&self) -> Option<&Path> {
         match self {
-            RepoProvider::Git(repo) => repo.work_dir(),
+            RepoProvider::Git(repo) => repo.workdir(),
             RepoProvider::Jujutsu(repo) => Some(repo.workspace_root()),
         }
     }
@@ -388,7 +388,7 @@ pub fn find_submodules<'a>(
             Ok(Some(repo)) => repo,
             _ => continue,
         };
-        let path = match repo.work_dir() {
+        let path = match repo.workdir() {
             Some(path) => path,
             _ => continue,
         };
