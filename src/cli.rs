@@ -770,7 +770,7 @@ fn init_repo_command(args: &InitRepoCommand, config: Config, tmux: &Tmux) -> Res
     path.push(&args.repository);
 
     let repo = gix::init(&path).change_context(TmsError::GitError)?;
-    let repo = RepoProvider::Git(repo);
+    let repo = RepoProvider::Git(Box::new(repo));
 
     let mut session_name = args.repository.to_string();
 
