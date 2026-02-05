@@ -275,11 +275,7 @@ impl Config {
                 .iter()
                 .filter_map(|b| {
                     if let Ok(expanded) = shellexpand::full(b) {
-                        if let Ok(path) = PathBuf::from(expanded.to_string()).canonicalize() {
-                            Some(path)
-                        } else {
-                            None
-                        }
+                        PathBuf::from(expanded.to_string()).canonicalize().ok()
                     } else {
                         None
                     }
