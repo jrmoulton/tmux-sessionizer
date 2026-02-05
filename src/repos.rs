@@ -8,6 +8,7 @@ use jj_lib::{
     repo::StoreFactories,
     settings::UserSettings,
     workspace::{WorkingCopyFactories, Workspace},
+    workspace_store::{SimpleWorkspaceStore, WorkspaceStore},
 };
 use std::{
     collections::{HashMap, VecDeque},
@@ -240,46 +241,29 @@ impl RepoProvider {
                 .collect()),
 
             RepoProvider::Jujutsu(workspace) => {
-                let mut repos: Vec<RepoProvider> = Vec::new();
+                let repo = workspace
+                    .repo_loader()
+                    .load_at_head()
+                    .change_context(TmsError::GitError)?;
+                let workspace_store = SimpleWorkspaceStore::load(workspace.repo_path())
+                    .change_context(TmsError::GitError)?;
+                let workspaces = repo
+                    .view()
+                    .wc_commit_ids()
+                    .keys()
+                    .filter(|name| name.as_str() != workspace.workspace_name().as_str())
+                    .map(|name| workspace_store.get_workspace_path(name))
+                    .filter_map(|opt| opt.ok().flatten());
 
-                search_dirs(config, |_, repo| {
-                    if !repo.is_worktree() {
-                        return Ok(());
-                    }
-                    let Some(path) = repo.main_repo() else {
-                        return Ok(());
-                    };
-                    if workspace.repo_path() == path {
-                        repos.push(repo);
-                    }
-                    Ok(())
-                })?;
-
-                if self.is_bare() {
-                    if let Ok(read_dir) = fs::read_dir(self.path()) {
-                        let mut sub = read_dir
-                            .filter_map(|entry| entry.ok())
-                            .map(|dir| dir.path())
-                            .filter(|path| path.is_dir())
-                            .filter_map(|path| RepoProvider::open(&path, config).ok())
-                            .filter(|repo| matches!(repo, RepoProvider::Jujutsu(_)))
-                            .filter(|repo| {
-                                repo.main_repo()
-                                    .is_some_and(|main| main == self.path().join(".jj/repo"))
-                            })
-                            .collect::<Vec<_>>();
-                        repos.append(&mut sub);
-                    }
-                }
-
-                let repos = repos
-                    .into_iter()
+                let repos = workspaces
+                    .filter_map(|path| RepoProvider::open(&path, config).ok())
                     .filter_map(|repo| match repo {
-                        RepoProvider::Jujutsu(r) => Some(r),
+                        RepoProvider::Jujutsu(workspace) => {
+                            Some(Box::new(workspace) as Box<dyn Worktree>)
+                        }
                         _ => None,
                     })
-                    .map(|i| Box::new(i) as Box<dyn Worktree>)
-                    .collect();
+                    .collect::<Vec<_>>();
                 Ok(repos)
             }
         }
