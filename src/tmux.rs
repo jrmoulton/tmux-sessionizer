@@ -255,6 +255,9 @@ impl Tmux {
         repo_name: &str,
         config: &Config,
     ) -> Result<()> {
+        if repo.is_worktree() {
+            return Ok(());
+        }
         let worktrees = repo.worktrees(config).change_context(TmsError::GitError)?;
         let worktrees = worktrees
             .iter()

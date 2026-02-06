@@ -10,7 +10,7 @@ use jj_lib::{
     workspace::{WorkingCopyFactories, Workspace},
 };
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs::{self},
     path::{Path, PathBuf},
     process::{self, Stdio},
@@ -240,22 +240,20 @@ impl RepoProvider {
                 .collect()),
 
             RepoProvider::Jujutsu(workspace) => {
+                let repo = workspace
+                    .repo_loader()
+                    .load_at_head()
+                    .change_context(TmsError::GitError)?;
+                let mut workspaces: HashSet<&str> = HashSet::from_iter(
+                    repo.view()
+                        .wc_commit_ids()
+                        .keys()
+                        .filter(|name| name.as_str() != workspace.workspace_name().as_str())
+                        .map(|buf| buf.as_str()),
+                );
                 let mut repos: Vec<RepoProvider> = Vec::new();
 
-                search_dirs(config, |_, repo| {
-                    if !repo.is_worktree() {
-                        return Ok(());
-                    }
-                    let Some(path) = repo.main_repo() else {
-                        return Ok(());
-                    };
-                    if workspace.repo_path() == path {
-                        repos.push(repo);
-                    }
-                    Ok(())
-                })?;
-
-                if self.is_bare() {
+                if self.is_bare() && !workspaces.is_empty() {
                     if let Ok(read_dir) = fs::read_dir(self.path()) {
                         let mut sub = read_dir
                             .filter_map(|entry| entry.ok())
@@ -268,8 +266,28 @@ impl RepoProvider {
                                     .is_some_and(|main| main == self.path().join(".jj/repo"))
                             })
                             .collect::<Vec<_>>();
+                        for repo in &sub {
+                            if let RepoProvider::Jujutsu(ws) = repo {
+                                workspaces.remove(ws.workspace_name().as_str());
+                            }
+                        }
                         repos.append(&mut sub);
                     }
+                }
+
+                if !workspaces.is_empty() {
+                    search_dirs(config, |_, repo| {
+                        if !repo.is_worktree() {
+                            return Ok(());
+                        }
+                        let Some(path) = repo.main_repo() else {
+                            return Ok(());
+                        };
+                        if workspace.repo_path() == path {
+                            repos.push(repo);
+                        }
+                        Ok(())
+                    })?;
                 }
 
                 let repos = repos
@@ -301,6 +319,26 @@ pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
                 Report::new(TmsError::GitError).attach_printable("Not a valid repository name")
             })?
             .to_string()?;
+
+        if let Some(true) = config.list_worktrees {
+            for worktree in repo.worktrees(config)?.iter() {
+                let Ok(sub) = worktree
+                    .path()
+                    .and_then(|path| RepoProvider::open(&path, config))
+                else {
+                    continue;
+                };
+                let session = Session::new(
+                    format!("{}#{}", session_name, worktree.name()),
+                    SessionType::Git(sub),
+                );
+                if let Some(list) = repos.get_mut(&session.name) {
+                    list.push(session);
+                } else {
+                    repos.insert(session.name.clone(), vec![session]);
+                }
+            }
+        }
 
         let session = Session::new(session_name, SessionType::Git(repo));
         if let Some(list) = repos.get_mut(&session.name) {
