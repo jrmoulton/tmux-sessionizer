@@ -267,11 +267,14 @@ fn is_executable(_path: &PathBuf) -> bool {
 
 /// Handle creation of a new directory via the create hook
 fn create_new_directory(name: &str, config: &tms::configs::Config, tmux: &Tmux) -> Result<()> {
-    // Convention: hook is always at ~/.config/tms/create-hook
-    let hook_path = dirs::config_dir()
+    // Check ~/.config/tms/create-hook first, then fall back to platform config dir
+    // (matches how config.toml loading works)
+    let hook_path = dirs::home_dir()
+        .map(|h| h.join(".config/tms/create-hook"))
+        .filter(|p| p.exists())
+        .or_else(|| dirs::config_dir().map(|c| c.join("tms/create-hook")))
         .ok_or(TmsError::ConfigError)
-        .attach_printable("Could not determine config directory")?
-        .join("tms/create-hook");
+        .attach_printable("Could not determine config directory")?;
 
     // Ensure hook exists (create from template if needed)
     ensure_hook_exists(&hook_path)?;
@@ -292,7 +295,11 @@ fn create_new_directory(name: &str, config: &tms::configs::Config, tmux: &Tmux) 
 
     let search_paths: Vec<String> = search_dirs
         .iter()
-        .map(|d| d.path.to_string_lossy().to_string())
+        .filter_map(|d| {
+            shellexpand::full(&d.path.to_string_lossy())
+                .ok()
+                .map(|p| p.to_string())
+        })
         .collect();
 
     if search_paths.is_empty() {
@@ -327,7 +334,6 @@ fn create_new_directory(name: &str, config: &tms::configs::Config, tmux: &Tmux) 
     } else {
         session_name
     };
-
     // Re-discover sessions to find the one we just created
     let sessions = create_sessions(config)?;
     let session = sessions
