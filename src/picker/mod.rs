@@ -130,6 +130,15 @@ impl<'a> Picker<'a> {
                         Some(PickerAction::Confirm) => {
                             if let Some(selected) = self.get_selected() {
                                 return Ok(Some(selected.to_owned()));
+                            } else if !self.filter.is_empty() {
+                                // No matches but user has typed something - offer to create new repo
+                                return Ok(Some(format!("__TMS_CREATE_NEW__:{}", self.filter)));
+                            }
+                        }
+                        Some(PickerAction::ForceCreate) => {
+                            // Force directory creation even if matches exist
+                            if !self.filter.is_empty() {
+                                return Ok(Some(format!("__TMS_CREATE_NEW__:{}", self.filter)));
                             }
                         }
                         Some(PickerAction::Backspace) => self.remove_filter(),
@@ -272,7 +281,35 @@ impl<'a> Picker<'a> {
 
         let prompt = Span::styled("> ", Style::default().fg(colors.prompt_color()));
         let input_text = Span::raw(&self.filter);
-        let input_line = Line::from(vec![prompt, input_text]);
+        let mut spans = vec![prompt, input_text];
+
+        // Show hint for directory creation based on match state
+        if !self.filter.is_empty() {
+            let hint_text = if snapshot.matched_item_count() == 0 {
+                // No matches - Enter creates
+                format!("  [↵: create {}]", self.filter)
+            } else if let Some(selected_name) = self.get_selected() {
+                // Has matches - show both options with truncated names
+                let create_name = if self.filter.len() > 15 {
+                    format!("{}…", &self.filter[..14])
+                } else {
+                    self.filter.clone()
+                };
+                let select_name = if selected_name.len() > 15 {
+                    format!("{}…", &selected_name[..14])
+                } else {
+                    selected_name.to_string()
+                };
+                format!("  [^↵: create {}, ↵: open {}]", create_name, select_name)
+            } else {
+                // Has matches but none selected
+                "  [^↵: create]".to_string()
+            };
+            let hint = Span::styled(hint_text, Style::default().fg(colors.info_color()));
+            spans.push(hint);
+        }
+
+        let input_line = Line::from(spans);
         let input = Paragraph::new(vec![input_line]);
         f.render_widget(input, layout[input_index]);
         f.set_cursor_position(layout::Position {
