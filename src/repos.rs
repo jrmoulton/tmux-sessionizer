@@ -10,6 +10,7 @@ use jj_lib::{
     workspace::{WorkingCopyFactories, Workspace},
     workspace_store::{SimpleWorkspaceStore, WorkspaceStore},
 };
+use once_cell::sync::OnceCell;
 use std::{
     collections::{HashMap, VecDeque},
     fs::{self},
@@ -60,6 +61,120 @@ impl Worktree for Workspace {
     }
 }
 
+impl VcsProviders {
+    pub fn new<'a, I>(path: &Path, providers: I) -> Result<Self>
+    where
+        I: IntoIterator<Item = &'a VcsProviders>,
+    {
+        providers
+            .into_iter()
+            .filter_map(|provider| match provider {
+                VcsProviders::Git => {
+                    let mut flags = 0u8;
+                    for entry in path.read_dir().ok()? {
+                        let entry = entry.ok()?;
+                        let name = entry.file_name();
+                        let file_type = entry.file_type().ok()?;
+
+                        match name.to_str() {
+                            Some(".git") => {
+                                return Some(VcsProviders::Git);
+                            }
+                            Some("HEAD") if file_type.is_file() => flags |= 0b001,
+                            Some("objects") if file_type.is_dir() => flags |= 0b010,
+                            Some("refs") if file_type.is_dir() => flags |= 0b100,
+                            _ => {}
+                        }
+                        if flags == 0b111 {
+                            return Some(VcsProviders::Git);
+                        }
+                    }
+                    None
+                }
+                VcsProviders::Jujutsu => path
+                    .join(".jj/repo")
+                    .exists()
+                    .then_some(VcsProviders::Jujutsu),
+            })
+            .next()
+            .ok_or(TmsError::GitError)
+            .attach_printable_lazy(|| format!("No repo found in {:#?}", path))
+    }
+
+    pub fn open(&self, path: &Path) -> Result<RepoProvider> {
+        match self {
+            VcsProviders::Git => gix::open(path)
+                .map(|repo| RepoProvider::Git(Box::new(repo)))
+                .change_context(TmsError::GitError),
+            VcsProviders::Jujutsu => {
+                let user_settings = UserSettings::from_config(StackedConfig::with_defaults())
+                    .change_context(TmsError::GitError)?;
+                let mut store_factories = StoreFactories::default();
+                store_factories.add_backend(
+                    GitBackend::name(),
+                    Box::new(|settings, store_path| {
+                        Ok(Box::new(GitBackend::load(settings, store_path)?))
+                    }),
+                );
+                let mut working_copy_factories = WorkingCopyFactories::new();
+                working_copy_factories.insert(
+                    LocalWorkingCopy::name().to_owned(),
+                    Box::new(LocalWorkingCopyFactory {}),
+                );
+
+                Workspace::load(
+                    &user_settings,
+                    path,
+                    &store_factories,
+                    &working_copy_factories,
+                )
+                .map(RepoProvider::Jujutsu)
+                .change_context(TmsError::GitError)
+            }
+        }
+    }
+}
+
+pub struct LazyRepoProvider {
+    pub path: PathBuf,
+    pub provider: VcsProviders,
+    resolved: OnceCell<RepoProvider>,
+}
+
+impl LazyRepoProvider {
+    pub fn new<'a, I>(path: &Path, providers: I) -> Result<Self>
+    where
+        I: IntoIterator<Item = &'a VcsProviders>,
+    {
+        let provider = VcsProviders::new(path, providers)?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            provider,
+            resolved: OnceCell::new(),
+        })
+    }
+
+    pub fn new_resolved(path: &Path, provider: VcsProviders, repo: RepoProvider) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            provider,
+            resolved: OnceCell::with_value(repo),
+        }
+    }
+
+    pub fn resolve(&self) -> Result<&RepoProvider> {
+        self.resolved
+            .get_or_try_init(|| self.provider.open(&self.path))
+    }
+
+    pub fn is_worktree(&self) -> bool {
+        match self.provider {
+            VcsProviders::Git => self.path.join(".git").is_file(),
+            VcsProviders::Jujutsu => self.path.join(".jj/repo").is_file(),
+        }
+    }
+}
+
 pub enum RepoProvider {
     Git(Box<Repository>),
     Jujutsu(Workspace),
@@ -73,55 +188,12 @@ impl From<gix::Repository> for RepoProvider {
 
 impl RepoProvider {
     pub fn open(path: &Path, config: &Config) -> Result<Self> {
-        fn open_git(path: &Path) -> Result<RepoProvider> {
-            gix::open(path)
-                .map(|repo| RepoProvider::Git(Box::new(repo)))
-                .change_context(TmsError::GitError)
-        }
-
-        fn open_jj(path: &Path) -> Result<RepoProvider> {
-            let user_settings = UserSettings::from_config(StackedConfig::with_defaults())
-                .change_context(TmsError::GitError)?;
-            let mut store_factories = StoreFactories::default();
-            store_factories.add_backend(
-                GitBackend::name(),
-                Box::new(|settings, store_path| {
-                    Ok(Box::new(GitBackend::load(settings, store_path)?))
-                }),
-            );
-            let mut working_copy_factories = WorkingCopyFactories::new();
-            working_copy_factories.insert(
-                LocalWorkingCopy::name().to_owned(),
-                Box::new(LocalWorkingCopyFactory {}),
-            );
-
-            Workspace::load(
-                &user_settings,
-                path,
-                &store_factories,
-                &working_copy_factories,
-            )
-            .map(RepoProvider::Jujutsu)
-            .change_context(TmsError::GitError)
-        }
-
         let vcs_provider_config = config
             .vcs_providers
-            .as_ref()
-            .map(|providers| providers.iter())
-            .unwrap_or(DEFAULT_VCS_PROVIDERS.iter());
-
-        let results = vcs_provider_config
-            .filter_map(|provider| match provider {
-                VcsProviders::Git => open_git(path).ok(),
-                VcsProviders::Jujutsu => open_jj(path).ok(),
-            })
-            .take(1);
-        results
-            .into_iter()
-            .next()
-            .ok_or(TmsError::GitError)
-            .change_context(TmsError::GitError)
+            .clone()
+            .unwrap_or_else(|| DEFAULT_VCS_PROVIDERS.to_vec());
+        let provider = VcsProviders::new(path, &vcs_provider_config)?;
+        provider.open(path)
     }
 
     pub fn is_worktree(&self) -> bool {
@@ -231,7 +303,7 @@ impl RepoProvider {
         }
     }
 
-    pub fn worktrees(&'_ self, config: &Config) -> Result<Vec<Box<dyn Worktree + '_>>> {
+    pub fn worktrees(&'_ self) -> Result<Vec<Box<dyn Worktree + '_>>> {
         match self {
             RepoProvider::Git(repo) => Ok(repo
                 .worktrees()
@@ -256,12 +328,14 @@ impl RepoProvider {
                     .filter_map(|opt| opt.ok().flatten());
 
                 let repos = workspaces
-                    .filter_map(|path| RepoProvider::open(&path, config).ok())
-                    .filter_map(|repo| match repo {
-                        RepoProvider::Jujutsu(workspace) => {
+                    .filter_map(|path| {
+                        if let Ok(RepoProvider::Jujutsu(workspace)) =
+                            VcsProviders::Jujutsu.open(&path)
+                        {
                             Some(Box::new(workspace) as Box<dyn Worktree>)
+                        } else {
+                            None
                         }
-                        _ => None,
                     })
                     .collect::<Vec<_>>();
                 Ok(repos)
@@ -299,11 +373,15 @@ pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
 
 fn search_dirs<F>(config: &Config, mut f: F) -> Result<()>
 where
-    F: FnMut(SearchDirectory, RepoProvider) -> Result<()>,
+    F: FnMut(SearchDirectory, LazyRepoProvider) -> Result<()>,
 {
     {
         let directories = config.search_dirs().change_context(TmsError::ConfigError)?;
         let mut to_search: VecDeque<SearchDirectory> = directories.into();
+        let vcs_provider_config = config
+            .vcs_providers
+            .clone()
+            .unwrap_or_else(|| DEFAULT_VCS_PROVIDERS.to_vec());
 
         let excluder = if let Some(excluded_dirs) = &config.excluded_dirs {
             Some(
@@ -323,7 +401,7 @@ where
                 }
             }
 
-            if let Ok(repo) = RepoProvider::open(&file.path, config) {
+            if let Ok(repo) = LazyRepoProvider::new(&file.path, &vcs_provider_config) {
                 f(file, repo)?;
             } else if file.path.is_dir() && file.depth > 0 {
                 match fs::read_dir(&file.path) {
@@ -373,7 +451,7 @@ pub fn find_submodules<'a>(
             _ => continue,
         };
         let path = match repo.workdir() {
-            Some(path) => path,
+            Some(path) => path.to_path_buf(),
             _ => continue,
         };
         let submodule_file_name = path
@@ -394,7 +472,14 @@ pub fn find_submodules<'a>(
                 find_submodules(submodules, &name, repos, config)?;
             }
         }
-        let session = Session::new(session_name, SessionType::Git(repo.into()));
+        let session = Session::new(
+            session_name,
+            SessionType::Git(LazyRepoProvider::new_resolved(
+                &path,
+                VcsProviders::Git,
+                RepoProvider::Git(Box::new(repo)),
+            )),
+        );
         repos.insert_session(name, session);
     }
     Ok(())
