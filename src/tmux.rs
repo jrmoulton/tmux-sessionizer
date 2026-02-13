@@ -249,13 +249,8 @@ impl Tmux {
         self.execute_tmux_command(&["move-window", "-s", source_window, "-t", target_window])
     }
 
-    pub fn set_up_tmux_env(
-        &self,
-        repo: &RepoProvider,
-        repo_name: &str,
-        config: &Config,
-    ) -> Result<()> {
-        let worktrees = repo.worktrees(config).change_context(TmsError::GitError)?;
+    pub fn set_up_tmux_env(&self, repo: &RepoProvider, repo_name: &str) -> Result<()> {
+        let worktrees = repo.worktrees().change_context(TmsError::GitError)?;
         let worktrees = worktrees
             .iter()
             // check only for non prunable worktrees

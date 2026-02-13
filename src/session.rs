@@ -6,10 +6,10 @@ use std::{
 use error_stack::ResultExt;
 
 use crate::{
-    configs::Config,
+    configs::{Config, VcsProviders},
     dirty_paths::DirtyUtf8Path,
     error::TmsError,
-    repos::{find_repos, find_submodules, RepoProvider},
+    repos::{find_repos, find_submodules, LazyRepoProvider},
     tmux::Tmux,
     Result,
 };
@@ -20,7 +20,7 @@ pub struct Session {
 }
 
 pub enum SessionType {
-    Git(RepoProvider),
+    Git(LazyRepoProvider),
     Bookmark(PathBuf),
 }
 
@@ -31,8 +31,7 @@ impl Session {
 
     pub fn path(&self) -> &Path {
         match &self.session_type {
-            SessionType::Git(repo) if repo.is_bare() => repo.path(),
-            SessionType::Git(repo) => repo.path().parent().unwrap(),
+            SessionType::Git(provider) => &provider.path,
             SessionType::Bookmark(path) => path,
         }
     }
@@ -46,10 +45,11 @@ impl Session {
 
     fn switch_to_repo_session(
         &self,
-        repo: &RepoProvider,
+        repo: &LazyRepoProvider,
         tmux: &Tmux,
         config: &Config,
     ) -> Result<()> {
+        let repo = repo.resolve()?;
         let path = if repo.is_bare() {
             repo.path().to_path_buf().to_string()?
         } else {
@@ -63,7 +63,7 @@ impl Session {
 
         if !tmux.session_exists(&session_name) {
             tmux.new_session(Some(&session_name), Some(&path));
-            tmux.set_up_tmux_env(repo, &session_name, config)?;
+            tmux.set_up_tmux_env(repo, &session_name)?;
             tmux.run_session_create_script(self.path(), &session_name, config)?;
         }
 
@@ -151,8 +151,11 @@ fn insert_session(
         session.name.clone()
     };
     if let SessionType::Git(repo) = &session.session_type {
-        if config.search_submodules == Some(true) {
-            if let Ok(Some(submodules)) = repo.submodules() {
+        if matches!(
+            (config.search_submodules, repo.provider),
+            (Some(true), VcsProviders::Git),
+        ) {
+            if let Ok(Some(submodules)) = repo.resolve().and_then(|repo| repo.submodules()) {
                 find_submodules(submodules, &visible_name, sessions, config)?;
             }
         }
