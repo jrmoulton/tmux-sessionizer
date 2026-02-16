@@ -44,9 +44,11 @@
               (import rust-overlay)
             ];
           };
+          packageVersion = (fromTOML (builtins.readFile ./Cargo.toml)).package.version;
           rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           commonArgs = with pkgs; {
+            version = "${packageVersion}-${self.shortRev or "dirty"}";
             src = craneLib.cleanCargoSource ./.;
             strictDeps = true;
 
