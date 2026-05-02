@@ -710,7 +710,7 @@ fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> R
         .repository
         .trim_end_matches('/')
         .rsplit_once('/')
-        .expect("Repository path contains '/'");
+        .expect("Repository path contains '/' but does not end with it");
     let repo_name = repo_name.trim_end_matches(".git");
     path.push(repo_name);
 
