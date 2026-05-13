@@ -159,6 +159,14 @@ pub struct RefreshCommand {
 pub struct CloneRepoCommand {
     /// Git repository to clone
     repository: String,
+    #[arg(long)]
+    /// Directory to create new repository in, if left empty will pick default
+    /// search path or prompt if multiple are configured
+    path: Option<String>,
+    #[arg(long)]
+    /// Name of cloned repository directory, will be picked based on remote url
+    /// if left empty
+    name: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -702,16 +710,26 @@ fn pick_search_path(config: &Config, tmux: &Tmux) -> Result<Option<PathBuf>> {
 }
 
 fn clone_repo_command(args: &CloneRepoCommand, config: Config, tmux: &Tmux) -> Result<()> {
-    let Some(mut path) = pick_search_path(&config, tmux)? else {
+    let Some(mut path) = (if let Some(p) = &args.path {
+        Some(
+            PathBuf::from(p)
+                .canonicalize()
+                .change_context(TmsError::IoError)?,
+        )
+    } else {
+        pick_search_path(&config, tmux)?
+    }) else {
         return Ok(());
     };
 
-    let (_, repo_name) = args
-        .repository
-        .trim_end_matches('/')
-        .rsplit_once('/')
-        .expect("Repository path contains '/'");
-    let repo_name = repo_name.trim_end_matches(".git");
+    let repo_name = args.name.as_deref().unwrap_or_else(|| {
+        let (_, name) = args
+            .repository
+            .trim_end_matches('/')
+            .rsplit_once('/')
+            .expect("Repository path contains '/'");
+        name.trim_end_matches(".git")
+    });
     path.push(repo_name);
 
     let previous_session = tmux.current_session("#{session_name}");
