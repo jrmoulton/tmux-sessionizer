@@ -47,6 +47,7 @@
           packageVersion = (fromTOML (builtins.readFile ./Cargo.toml)).package.version;
           rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+
           commonArgs = with pkgs; {
             version = "${packageVersion}-${self.shortRev or "dirty"}";
             src = craneLib.cleanCargoSource ./.;
@@ -55,7 +56,11 @@
             nativeBuildInputs = [
               installShellFiles
             ];
+          nativeCheckInputs = [
+              git
+            ];
           };
+
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
           tmux-sessionizer = craneLib.buildPackage (
             commonArgs
@@ -111,7 +116,6 @@
         overlays.default = final: prev: {
           inherit (self.packages.${final.stdenv.hostPlatform.system}) tmux-sessionizer;
         };
-
       };
     };
 }

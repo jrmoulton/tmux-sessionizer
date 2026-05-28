@@ -167,10 +167,16 @@ impl LazyRepoProvider {
             .get_or_try_init(|| self.provider.open(&self.path))
     }
 
-    pub fn is_worktree(&self) -> bool {
+    pub fn is_worktree(&self) -> Result<bool> {
         match self.provider {
-            VcsProviders::Git => self.path.join(".git").is_file(),
-            VcsProviders::Jujutsu => self.path.join(".jj/repo").is_file(),
+            VcsProviders::Git => {
+                if !self.path.join(".git").is_file() {
+                    return Ok(false);
+                }
+                let repo = self.resolve()?;
+                Ok(repo.is_worktree())
+            }
+            VcsProviders::Jujutsu => Ok(self.path.join(".jj/repo").is_file()),
         }
     }
 }
@@ -198,7 +204,12 @@ impl RepoProvider {
 
     pub fn is_worktree(&self) -> bool {
         match self {
-            RepoProvider::Git(repo) => !repo.main_repo().is_ok_and(|r| r == **repo),
+            RepoProvider::Git(repo) => {
+                matches!(
+                    repo.kind(),
+                    gix::repository::Kind::WorkTree { is_linked: true }
+                )
+            }
             RepoProvider::Jujutsu(repo) => {
                 let repo_path = repo.repo_path();
                 let workspace_repo_path = repo.workspace_root().join(".jj/repo");
@@ -348,7 +359,7 @@ pub fn find_repos(config: &Config) -> Result<HashMap<String, Vec<Session>>> {
     let mut repos: HashMap<String, Vec<Session>> = HashMap::new();
 
     search_dirs(config, |file, repo| {
-        if repo.is_worktree() {
+        if repo.is_worktree().unwrap_or(true) {
             return Ok(());
         }
 
@@ -483,4 +494,35 @@ pub fn find_submodules<'a>(
         repos.insert_session(name, session);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{fs, process::Command};
+    use tempfile::tempdir;
+
+    #[test]
+    fn gitlink_to_dot_bare_is_not_filtered_as_worktree() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        // 1. Create the bare repository
+        Command::new("git")
+            .args(["init", "--bare"])
+            .arg(root.join(".bare"))
+            .status()
+            .unwrap();
+
+        // 2. Dynamically create the absolute path for the gitdir pointer
+        let bare_path = root.join(".bare");
+        let gitlink_content = format!("gitdir: {}\n", bare_path.display());
+
+        // 3. Write the absolute path to the .git file
+        fs::write(root.join(".git"), gitlink_content).unwrap();
+
+        // 4. Run the assertions
+        let repo = LazyRepoProvider::new(root, &[VcsProviders::Git]).unwrap();
+        assert!(!repo.is_worktree().unwrap());
+    }
 }
