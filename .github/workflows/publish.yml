@@ -1,0 +1,24 @@
+name: Publish to crates.io
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            cargo publish
+          else
+            cargo publish --dry-run
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
