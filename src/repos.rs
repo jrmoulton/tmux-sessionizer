@@ -246,10 +246,7 @@ impl RepoProvider {
     pub fn is_worktree(&self) -> bool {
         match self {
             RepoProvider::Git(repo) => {
-                matches!(
-                    repo.kind(),
-                    gix::repository::Kind::WorkTree { is_linked: true }
-                )
+                matches!(repo.kind(), gix::repository::Kind::LinkedWorkTree)
             }
             RepoProvider::Jujutsu(repo) => {
                 let repo_path = repo.repo_path();
