@@ -53,6 +53,7 @@ pub struct Picker<'a> {
     input_position: InputPosition,
     tmux: &'a Tmux,
     active_sessions: Option<std::collections::HashSet<String>>,
+    modal_mode: bool,
 }
 
 impl<'a> Picker<'a> {
@@ -88,6 +89,7 @@ impl<'a> Picker<'a> {
             input_position,
             tmux,
             active_sessions: None,
+            modal_mode: false,
         }
     }
 
@@ -125,34 +127,76 @@ impl<'a> Picker<'a> {
 
             if let Event::Key(key) = event::read().map_err(|e| TmsError::TuiError(e.to_string()))? {
                 if key.kind == KeyEventKind::Press {
-                    match self.keymap.0.get(&key.into()) {
-                        Some(PickerAction::Cancel) => return Ok(None),
-                        Some(PickerAction::Confirm) => {
-                            if let Some(selected) = self.get_selected() {
-                                return Ok(Some(selected.to_owned()));
-                            }
-                        }
-                        Some(PickerAction::Backspace) => self.remove_filter(),
-                        Some(PickerAction::Delete) => self.delete(),
-                        Some(PickerAction::DeleteWord) => self.delete_word(),
-                        Some(PickerAction::DeleteToLineStart) => self.delete_to_line(false),
-                        Some(PickerAction::DeleteToLineEnd) => self.delete_to_line(true),
-                        Some(PickerAction::MoveUp) => self.move_up(),
-                        Some(PickerAction::MoveDown) => self.move_down(),
-                        Some(PickerAction::CursorLeft) => self.move_cursor_left(),
-                        Some(PickerAction::CursorRight) => self.move_cursor_right(),
-                        Some(PickerAction::MoveToLineStart) => self.move_to_start(),
-                        Some(PickerAction::MoveToLineEnd) => self.move_to_end(),
-                        Some(PickerAction::Noop) => {}
-                        None => {
-                            if let KeyCode::Char(c) = key.code {
-                                self.update_filter(c)
-                            }
-                        }
+                    let action = self.resolve_key_action(key);
+                    if let Some(result) = self.handle_action(action, key)? {
+                        return Ok(result);
                     }
                 }
             }
         }
+    }
+
+    fn resolve_key_action(&self, key: crossterm::event::KeyEvent) -> Option<PickerAction> {
+        if self.modal_mode {
+            match key.code {
+                KeyCode::Char('h') => Some(PickerAction::CursorLeft),
+                KeyCode::Char('j') => Some(PickerAction::MoveDown),
+                KeyCode::Char('k') => Some(PickerAction::MoveUp),
+                KeyCode::Char('l') => Some(PickerAction::CursorRight),
+                KeyCode::Char('i') => Some(PickerAction::ToggleModal),
+                KeyCode::Enter => Some(PickerAction::Confirm),
+                KeyCode::Esc => Some(PickerAction::Cancel),
+                _ => Some(PickerAction::Noop),
+            }
+        } else {
+            // In normal mode, use the config map
+            self.keymap.0.get(&key.into()).copied()
+        }
+    }
+
+    fn handle_action(
+        &mut self,
+        action: Option<PickerAction>,
+        key: crossterm::event::KeyEvent,
+    ) -> Result<Option<Option<String>>> {
+        match action {
+            Some(PickerAction::Cancel) => return Ok(Some(None)),
+            Some(PickerAction::Confirm) => {
+                if let Some(selected) = self.get_selected() {
+                    return Ok(Some(Some(selected.to_owned())));
+                }
+            }
+            Some(PickerAction::Backspace) => self.remove_filter(),
+            Some(PickerAction::Delete) => self.delete(),
+            Some(PickerAction::DeleteWord) => self.delete_word(),
+            Some(PickerAction::DeleteToLineStart) => self.delete_to_line(false),
+            Some(PickerAction::DeleteToLineEnd) => self.delete_to_line(true),
+            Some(PickerAction::MoveUp) => self.move_up(),
+            Some(PickerAction::MoveDown) => self.move_down(),
+            Some(PickerAction::CursorLeft) => self.move_cursor_left(),
+            Some(PickerAction::CursorRight) => self.move_cursor_right(),
+            Some(PickerAction::MoveToLineStart) => self.move_to_start(),
+            Some(PickerAction::MoveToLineEnd) => self.move_to_end(),
+            Some(PickerAction::ToggleModal) => {
+                self.modal_mode = !self.modal_mode;
+                if self.modal_mode {
+                    self.matcher.pattern.reparse(
+                        0,
+                        self.filter.as_str(),
+                        CaseMatching::Smart,
+                        Normalization::Smart,
+                        true,
+                    );
+                }
+            }
+            Some(PickerAction::Noop) => {}
+            None => {
+                if let KeyCode::Char(c) = key.code {
+                    self.update_filter(c);
+                }
+            }
+        }
+        Ok(None)
     }
 
     fn update_selection(&mut self) {
@@ -263,9 +307,10 @@ impl<'a> Picker<'a> {
                     .title_style(Style::default().fg(colors.info_color()))
                     .title_position(title_position)
                     .title(format!(
-                        "{}/{}",
+                        "{}/{}{}",
                         snapshot.matched_item_count(),
-                        snapshot.item_count()
+                        snapshot.item_count(),
+                        if self.modal_mode { " (hjkl)" } else { "" }
                     )),
             );
         f.render_stateful_widget(table, layout[list_index], &mut self.selection);
@@ -436,6 +481,7 @@ impl<'a> Picker<'a> {
             Normalization::Smart,
             self.filter.starts_with(prev_filter),
         );
+        self.selection.select(Some(0));
     }
 
     fn delete_word(&mut self) {
