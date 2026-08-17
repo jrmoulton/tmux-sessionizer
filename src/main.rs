@@ -89,19 +89,14 @@ fn get_session_list(
         config.session_sort_order,
         Some(SessionSortOrderConfig::LastAttached)
     ) {
-        // Get active sessions from tmux with timestamps, excluding the currently attached one
-        let active_sessions_raw =
-            tmux.list_sessions("'#{?session_attached,,#{session_name}#,#{session_last_attached}}'");
+        // Get active sessions from tmux with timestamps, excluding any a client is attached to
+        let unattached = tmux.unattached_sessions();
 
         // Parse into (name, timestamp) pairs
-        let active_sessions: Vec<(&str, i64)> = active_sessions_raw
-            .trim()
-            .split('\n')
-            .filter_map(|line| {
-                let line = line.trim_matches('\'');
-                let (name, timestamp) = line.split_once(',')?;
-                let timestamp = timestamp.parse::<i64>().ok()?;
-                Some((name, timestamp))
+        let active_sessions: Vec<(&str, i64)> = unattached
+            .iter()
+            .filter_map(|(name, last_attached)| {
+                Some((name.as_str(), last_attached.parse::<i64>().ok()?))
             })
             .collect();
 
