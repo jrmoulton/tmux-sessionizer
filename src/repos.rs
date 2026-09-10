@@ -241,12 +241,8 @@ impl RepoProvider {
 
     pub fn is_worktree(&self) -> bool {
         match self {
-            // TODO: gix 0.85 misclassifies bare-repo worktrees as `Common` rather than `LinkedWorkTree`.
-            // We should revert our workaround once the upstream fix lands.
-            // https://github.com/GitoxideLabs/gitoxide/pull/2699
             RepoProvider::Git(repo) => {
                 matches!(repo.kind(), gix::repository::Kind::LinkedWorkTree)
-                    || repo.workdir().is_some_and(|wd| wd.join(".git").is_file())
             }
             RepoProvider::Jujutsu(repo) => {
                 let repo_path = repo.repo_path();
