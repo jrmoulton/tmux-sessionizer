@@ -1,15 +1,15 @@
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use error_stack::{report, Report, ResultExt};
+use futures::executor::block_on;
 use gix::{bstr::ByteSlice, Repository, Submodule};
 use jj_lib::{
     config::StackedConfig,
-    git_backend::GitBackend,
+    default_backend_factories::default_backend_factories,
     local_working_copy::{LocalWorkingCopy, LocalWorkingCopyFactory},
     protos::simple_workspace_store,
-    repo::StoreFactories,
     settings::UserSettings,
+    working_copy::WorkingCopyFactory,
     workspace::{WorkingCopyFactories, Workspace},
-    workspace_store::{SimpleWorkspaceStore, WorkspaceStore},
 };
 use once_cell::sync::OnceCell;
 use prost::Message as _;
@@ -126,20 +126,16 @@ impl VcsProviders {
                 .map(|repo| RepoProvider::Git(Box::new(repo)))
                 .change_context(TmsError::GitError),
             VcsProviders::Jujutsu => {
-                let user_settings = UserSettings::from_config(StackedConfig::with_defaults())
-                    .change_context(TmsError::GitError)?;
-                let mut store_factories = StoreFactories::default();
-                store_factories.add_backend(
-                    GitBackend::name(),
-                    Box::new(|settings, store_path| {
-                        Ok(Box::new(GitBackend::load(settings, store_path)?))
-                    }),
-                );
-                let mut working_copy_factories = WorkingCopyFactories::new();
-                working_copy_factories.insert(
-                    LocalWorkingCopy::name().to_owned(),
-                    Box::new(LocalWorkingCopyFactory {}),
-                );
+                let user_settings = UserSettings::from_config_and_home_dir(
+                    StackedConfig::with_defaults(),
+                    dirs::home_dir(),
+                )
+                .change_context(TmsError::GitError)?;
+                let store_factories = default_backend_factories();
+                let working_copy_factories = WorkingCopyFactories::from([(
+                    LocalWorkingCopy::NAME.to_owned(),
+                    Box::new(LocalWorkingCopyFactory {}) as Box<dyn WorkingCopyFactory>,
+                )]);
 
                 Workspace::load(
                     &user_settings,
@@ -305,7 +301,7 @@ impl RepoProvider {
             RepoProvider::Jujutsu(workspace) => {
                 let loader = workspace.repo_loader();
                 let store = loader.store();
-                let Ok(repo) = loader.load_at_head() else {
+                let Ok(repo) = block_on(loader.load_at_head()) else {
                     return false;
                 };
                 // currently checked out commit, get from current (default) workspace
@@ -317,14 +313,15 @@ impl RepoProvider {
                     return false;
                 };
                 // if parent is root commit then it's the only possible parent
-                let Some(Ok(parent)) = commit.parents().next() else {
+                let Ok(Some(parent)) = block_on(commit.parents()).map(|p| p.into_iter().next())
+                else {
                     return false;
                 };
 
                 // root commit is direct parent of current commit => repo is effectively bare
                 // current commit should be empty
                 parent.change_id() == store.root_commit().change_id()
-                    && commit.is_empty(&*repo).unwrap_or_default()
+                    && block_on(commit.is_empty(repo.as_ref())).unwrap_or_default()
             }
         }
     }
@@ -366,12 +363,9 @@ impl RepoProvider {
                 .collect()),
 
             RepoProvider::Jujutsu(workspace) => {
-                let repo = workspace
-                    .repo_loader()
-                    .load_at_head()
+                let repo = block_on(workspace.repo_loader().load_at_head())
                     .change_context(TmsError::GitError)?;
-                let workspace_store = SimpleWorkspaceStore::load(workspace.repo_path())
-                    .change_context(TmsError::GitError)?;
+                let workspace_store = workspace.repo_loader().workspace_store();
                 let workspaces = repo
                     .view()
                     .wc_commit_ids()
