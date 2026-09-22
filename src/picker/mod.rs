@@ -383,18 +383,30 @@ impl<'a> Picker<'a> {
     }
 
     fn move_cursor_right(&mut self) {
-        if self.cursor_pos < self.filter.len() as u16 {
+        if self.cursor_pos < self.filter.chars().count() as u16 {
             self.cursor_pos += 1;
         }
     }
 
+    fn cursor_byte_position(&self) -> usize {
+        self.filter_byte_position(self.cursor_pos as usize)
+    }
+
+    fn filter_byte_position(&self, index: usize) -> usize {
+        self.filter
+            .chars()
+            .take(index)
+            .map(|char| char.len_utf8())
+            .sum()
+    }
+
     fn update_filter(&mut self, c: char) {
-        if self.filter.len() == u16::MAX as usize {
+        if self.filter.chars().count() == u16::MAX as usize {
             return;
         }
 
         let prev_filter = self.filter.clone();
-        self.filter.insert(self.cursor_pos as usize, c);
+        self.filter.insert(self.cursor_byte_position(), c);
         self.cursor_pos += 1;
 
         self.update_matcher_pattern(&prev_filter);
@@ -406,7 +418,8 @@ impl<'a> Picker<'a> {
         }
 
         let prev_filter = self.filter.clone();
-        self.filter.remove(self.cursor_pos as usize - 1);
+        self.filter
+            .remove(self.filter_byte_position(self.cursor_pos as usize - 1));
 
         self.cursor_pos -= 1;
 
@@ -416,12 +429,12 @@ impl<'a> Picker<'a> {
     }
 
     fn delete(&mut self) {
-        if (self.cursor_pos as usize) == self.filter.len() {
+        if (self.cursor_pos as usize) == self.filter.chars().count() {
             return;
         }
 
         let prev_filter = self.filter.clone();
-        self.filter.remove(self.cursor_pos as usize);
+        self.filter.remove(self.cursor_byte_position());
 
         if self.filter != prev_filter {
             self.update_matcher_pattern(&prev_filter);
@@ -446,8 +459,14 @@ impl<'a> Picker<'a> {
             .skip(self.filter.chars().count() - self.cursor_pos as usize);
         let length = std::cmp::min(
             u16::try_from(
-                1 + chars.by_ref().take_while(|c| *c == ' ').count()
-                    + chars.by_ref().take_while(|c| *c != ' ').count(),
+                1 + chars
+                    .by_ref()
+                    .take_while(|c| c.is_ascii_whitespace())
+                    .count()
+                    + chars
+                        .by_ref()
+                        .take_while(|c| !c.is_ascii_whitespace())
+                        .count(),
             )
             .unwrap_or(self.cursor_pos),
             self.cursor_pos,
@@ -457,7 +476,7 @@ impl<'a> Picker<'a> {
         let new_cursor_pos = self.cursor_pos - length;
 
         self.filter
-            .drain((new_cursor_pos as usize)..(self.cursor_pos as usize));
+            .drain(self.filter_byte_position(new_cursor_pos as usize)..self.cursor_byte_position());
 
         self.cursor_pos = new_cursor_pos;
 
@@ -470,9 +489,9 @@ impl<'a> Picker<'a> {
         let prev_filter = self.filter.clone();
 
         if forward {
-            self.filter.drain((self.cursor_pos as usize)..);
+            self.filter.drain(self.cursor_byte_position()..);
         } else {
-            self.filter.drain(..(self.cursor_pos as usize));
+            self.filter.drain(..self.cursor_byte_position());
             self.cursor_pos = 0;
         }
 
@@ -486,8 +505,77 @@ impl<'a> Picker<'a> {
     }
 
     fn move_to_end(&mut self) {
-        self.cursor_pos = u16::try_from(self.filter.len()).unwrap_or_default();
+        self.cursor_pos = u16::try_from(self.filter.chars().count()).unwrap_or_default();
     }
 }
 
 fn request_redraw() {}
+
+#[cfg(test)]
+mod tests {
+    use super::Picker;
+    use crate::tmux::Tmux;
+
+    fn create_picker() -> Picker<'static> {
+        let tmux = Box::leak(Box::new(Tmux::default()));
+        Picker::new(&[], None, None, super::InputPosition::Top, tmux)
+    }
+
+    impl Picker<'_> {
+        fn insert_string(&mut self, value: &str) {
+            for char in value.chars() {
+                self.update_filter(char);
+            }
+        }
+    }
+
+    #[test]
+    fn test_insert_non_ascii() {
+        let mut picker = create_picker();
+
+        picker.insert_string("ä");
+
+        assert_eq!(picker.filter, "ä");
+        assert_eq!(picker.cursor_pos, 1);
+    }
+
+    #[test]
+    fn test_remove_non_ascii() {
+        let mut picker = create_picker();
+        picker.insert_string("what's a wörd  ");
+        assert_eq!(picker.cursor_pos, 15);
+
+        picker.delete_word();
+
+        assert_eq!(picker.filter, "what's a ");
+        assert_eq!(picker.cursor_pos, 9);
+    }
+
+    #[test]
+    fn test_backspace_after_non_ascii() {
+        let mut picker = create_picker();
+        picker.insert_string("äbc");
+        picker.move_cursor_left();
+
+        assert_eq!(picker.cursor_pos, 2);
+
+        picker.remove_filter();
+
+        assert_eq!(picker.filter, "äc");
+        assert_eq!(picker.cursor_pos, 1);
+    }
+
+    #[test]
+    fn test_insert_mid_string_after_non_ascii() {
+        let mut picker = create_picker();
+        picker.insert_string("äc");
+        picker.move_cursor_left();
+
+        assert_eq!(picker.cursor_pos, 1);
+
+        picker.insert_string("b");
+
+        assert_eq!(picker.filter, "äbc");
+        assert_eq!(picker.cursor_pos, 2);
+    }
+}
