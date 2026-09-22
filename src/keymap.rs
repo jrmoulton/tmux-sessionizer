@@ -205,7 +205,7 @@ impl Default for Keymap {
                     code: KeyCode::Esc,
                     modifiers: KeyModifiers::empty(),
                 },
-                PickerAction::Cancel,
+                PickerAction::ToggleModal,
             ),
             (
                 Key {
@@ -363,4 +363,6 @@ pub enum PickerAction {
     MoveToLineStart,
     #[serde(rename = "move_to_line_end")]
     MoveToLineEnd,
+    #[serde(rename = "toggle_modal")]
+    ToggleModal,
 }
