@@ -219,20 +219,23 @@ session switch. This can be configured with settings like this.
 bind -r '(' switch-client -p\; refresh-client -S
 bind -r ')' switch-client -n\; refresh-client -S
 ```
- 
+
 ## Shell completions
 
 ### Bash
+
 ```bash
-echo "source <(COMPLETE=bash tms)" >> ~/.bashrc
+echo "source <(tms --generate bash)" >> ~/.bashrc
 ```
 
 ### Zsh
+
 ```zsh
-echo "source <(COMPLETE=zsh tms)" >> ~/.zshrc
+echo "source <(tms --generate zsh)" >> ~/.zshrc
 ```
 
 ### Fish
+
 ```fish
-echo "COMPLETE=fish tms | source" >> ~/.config/fish/config.fish
+echo "tms --generate fish| source" >> ~/.config/fish/config.fish
 ```
