@@ -76,15 +76,46 @@ impl Tmux {
         Tmux::stdout_to_string(output)
     }
 
-    pub fn current_session(&self, format: &str) -> String {
-        let output = self.execute_tmux_command(&[
-            "list-sessions",
-            "-F",
-            format,
-            "-f",
-            "#{session_attached}",
-        ]);
+    /// Sessions nobody is looking at, as `(name, last_attached)` pairs, most recent first when the
+    /// caller sorts on the second field.
+    ///
+    /// `#{session_attached}` counts every client, control-mode ones included. A tool that keeps a
+    /// `tmux -C attach-session` open per session — tmux-agents' daemon does, because tmux's
+    /// `%output` and `refresh-client -B` subscriptions are session-scoped — therefore makes every
+    /// session look attached, and a picker filtered on that comes up empty. Only a client someone
+    /// is actually looking at should hide a session, so the attached set comes from `list-clients`
+    /// with the control-mode ones dropped.
+    pub fn unattached_sessions(&self) -> Vec<(String, String)> {
+        let watched: Vec<String> = self
+            .list_clients("'#{?client_control_mode,,#{client_session}}'")
+            .lines()
+            .map(|line| line.trim().trim_matches('\'').to_string())
+            .filter(|session| !session.is_empty())
+            .collect();
+
+        self.list_sessions("'#{session_name},#{session_last_attached}'")
+            .lines()
+            .filter_map(|line| line.trim().trim_matches('\'').split_once(','))
+            .filter(|(name, _)| !watched.iter().any(|w| w == name))
+            .map(|(name, last_attached)| (name.to_string(), last_attached.to_string()))
+            .collect()
+    }
+
+    pub fn list_clients(&self, format: &str) -> String {
+        let output = self.execute_tmux_command(&["list-clients", "-F", format]);
         Tmux::stdout_to_string(output)
+    }
+
+    /// The session the invoking client is in.
+    ///
+    /// `display-message` is the only way to ask this: it is client-scoped, so it answers for the
+    /// client that ran `tms`. The previous `list-sessions -f '#{session_attached}'` was
+    /// server-scoped and returned EVERY session with a client on it — one line per attached
+    /// session, not the current one. With a single client that read the same most of the time,
+    /// which is why it went unnoticed; with a second client attached anywhere (a person's, or a
+    /// control-mode monitor's) it returns several sessions.
+    pub fn current_session(&self, format: &str) -> String {
+        self.display_message(format)
     }
 
     pub fn kill_session(&self, session: &str) -> process::Output {

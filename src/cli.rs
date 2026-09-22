@@ -313,22 +313,13 @@ fn start_command(config: Config, tmux: &Tmux) -> Result<()> {
 }
 
 fn switch_command(config: Config, tmux: &Tmux) -> Result<()> {
-    let sessions = tmux
-        .list_sessions("'#{?session_attached,,#{session_name}#,#{session_last_attached}}'")
-        .replace('\'', "")
-        .replace("\n\n", "\n");
-
-    let mut sessions: Vec<(&str, &str)> = sessions
-        .trim()
-        .split('\n')
-        .filter_map(|s| s.split_once(','))
-        .collect();
+    let mut sessions = tmux.unattached_sessions();
 
     if let Some(SessionSortOrderConfig::LastAttached) = config.session_sort_order {
-        sessions.sort_by(|a, b| b.1.cmp(a.1));
+        sessions.sort_by(|a, b| b.1.cmp(&a.1));
     }
 
-    let mut sessions: Vec<String> = sessions.into_iter().map(|s| s.0.to_string()).collect();
+    let mut sessions: Vec<String> = sessions.into_iter().map(|s| s.0).collect();
     if let Some(true) = config.switch_filter_unknown {
         let configured = create_sessions(&config)?;
 
@@ -509,19 +500,10 @@ fn kill_subcommand(config: Config, tmux: &Tmux) -> Result<()> {
     let mut current_session = tmux.display_message("'#S'");
     current_session.retain(|x| x != '\'' && x != '\n');
 
-    let sessions = tmux
-        .list_sessions("'#{?session_attached,,#{session_name}#,#{session_last_attached}}'")
-        .replace('\'', "")
-        .replace("\n\n", "\n");
-
-    let mut sessions: Vec<(&str, &str)> = sessions
-        .trim()
-        .split('\n')
-        .filter_map(|s| s.split_once(','))
-        .collect();
+    let mut sessions = tmux.unattached_sessions();
 
     if let Some(SessionSortOrderConfig::LastAttached) = config.session_sort_order {
-        sessions.sort_by(|a, b| b.1.cmp(a.1));
+        sessions.sort_by(|a, b| b.1.cmp(&a.1));
     }
 
     let to_session = if config.default_session.is_some()
@@ -532,7 +514,7 @@ fn kill_subcommand(config: Config, tmux: &Tmux) -> Result<()> {
     {
         config.default_session.as_deref()
     } else {
-        sessions.first().map(|s| s.0)
+        sessions.first().map(|s| s.0.as_str())
     };
     if let Some(to_session) = to_session {
         tmux.switch_client(to_session);
