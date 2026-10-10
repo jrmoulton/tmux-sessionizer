@@ -158,7 +158,7 @@ impl Tmux {
         if command_path.exists() {
             self.send_keys(
                 &command_path.to_string()?,
-                Some(&format!("{}:{{start}}.{{top}}", &session_name)),
+                Some(&format!("{}:{{start}}.{{top}}", session_name)),
             );
         }
 

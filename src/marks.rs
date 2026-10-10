@@ -123,7 +123,7 @@ fn get_marks(config: &Config) -> Option<Vec<(usize, Session)>> {
             index.zip(session)
         })
         .collect::<Vec<_>>();
-    items.sort_by(|(a, _), (b, _)| a.cmp(b));
+    items.sort_by_key(|(index, _)| *index);
     Some(items)
 }
 
